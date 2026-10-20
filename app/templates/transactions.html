@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Lịch sử giao dịch{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Lịch sử nhập / xuất</h1>
+  <div class="seg">
+    <a class="{{ 'active' if not tx_type }}" href="{{ url_for('transactions') }}">Tất cả</a>
+    <a class="{{ 'active' if tx_type == 'IN' }}" href="{{ url_for('transactions', type='IN') }}">Nhập</a>
+    <a class="{{ 'active' if tx_type == 'OUT' }}" href="{{ url_for('transactions', type='OUT') }}">Xuất</a>
+  </div>
+</div>
+<div class="card">
+<table>
+  <thead><tr><th>#</th><th>Thời gian</th><th>Loại</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th><th>NCC</th><th>Ghi chú</th><th>Người tạo</th></tr></thead>
+  <tbody>
+  {% for t in items %}
+    <tr><td>{{ t.id }}</td><td>{{ t.created_at|dt }}</td>
+      <td><span class="badge {{ 'badge-in' if t.type == 'IN' else 'badge-out' }}">{{ 'Nhập' if t.type == 'IN' else 'Xuất' }}</span></td>
+      <td><code>{{ t.product.sku }}</code> {{ t.product.name }}</td>
+      <td class="num">{{ t.quantity }}</td><td class="num">{{ t.unit_price|money }}</td>
+      <td class="num">{{ (t.unit_price * t.quantity)|money }}</td>
+      <td>{{ t.supplier.name if t.supplier else '' }}</td><td>{{ t.note or '' }}</td><td>{{ t.created_by or '' }}</td></tr>
+  {% else %}<tr><td colspan="10" class="muted">Chưa có giao dịch</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

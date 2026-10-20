@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Tổng quan{% endblock %}
+{% block content %}
+<h1>Tổng quan kho</h1>
+<div class="stats">
+  <div class="stat"><span class="stat-label">Mặt hàng</span><span class="stat-value">{{ total_products }}</span></div>
+  <div class="stat"><span class="stat-label">Tổng số lượng tồn</span><span class="stat-value">{{ "{:,}".format(total_units|int).replace(",", ".") }}</span></div>
+  <div class="stat"><span class="stat-label">Giá trị tồn kho</span><span class="stat-value">{{ stock_value|money }}</span></div>
+  <div class="stat"><span class="stat-label">Nhà cung cấp</span><span class="stat-value">{{ total_suppliers }}</span></div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><h2>⚠️ Sắp hết hàng ({{ low_stock|length }})</h2>
+      <a href="{{ url_for('products', low=1) }}">Xem tất cả</a></div>
+    {% if low_stock %}
+    <table>
+      <thead><tr><th>SKU</th><th>Sản phẩm</th><th class="num">Tồn</th><th class="num">Tối thiểu</th><th></th></tr></thead>
+      <tbody>
+      {% for p in low_stock %}
+        <tr><td><code>{{ p.sku }}</code></td><td>{{ p.name }}</td>
+          <td class="num"><span class="badge {{ 'badge-danger' if p.quantity == 0 else 'badge-warn' }}">{{ p.quantity }}</span></td>
+          <td class="num">{{ p.min_stock }}</td>
+          <td><a class="btn btn-sm" href="{{ url_for('stock', direction='in', product_id=p.id) }}">Nhập</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">Không có sản phẩm nào dưới mức tồn tối thiểu.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Giao dịch gần đây</h2><a href="{{ url_for('transactions') }}">Xem tất cả</a></div>
+    <table>
+      <thead><tr><th>Thời gian</th><th>Loại</th><th>Sản phẩm</th><th class="num">SL</th></tr></thead>
+      <tbody>
+      {% for t in recent %}
+        <tr><td>{{ t.created_at|dt }}</td>
+          <td><span class="badge {{ 'badge-in' if t.type == 'IN' else 'badge-out' }}">{{ 'Nhập' if t.type == 'IN' else 'Xuất' }}</span></td>
+          <td>{{ t.product.name }}</td><td class="num">{{ t.quantity }}</td></tr>
+      {% else %}<tr><td colspan="4" class="muted">Chưa có giao dịch</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

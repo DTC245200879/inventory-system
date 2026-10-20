@@ -1,0 +1,17 @@
+# Bí mật - tuyệt đối không commit
+.env
+nginx/certs/*.key
+nginx/certs/*.crt
+nginx/certs/*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

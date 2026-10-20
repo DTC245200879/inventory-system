@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sửa' if p.id else 'Thêm' }} sản phẩm{% endblock %}
+{% block content %}
+<h1>{{ 'Sửa sản phẩm' if p.id else 'Thêm sản phẩm' }}</h1>
+<form method="post" class="card form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="form-grid">
+    <label>Mã SKU *<input name="sku" value="{{ p.sku or '' }}" required maxlength="50"></label>
+    <label>Tên sản phẩm *<input name="name" value="{{ p.name or '' }}" required maxlength="150"></label>
+    <label>Danh mục<input name="category" value="{{ p.category or '' }}" maxlength="80"></label>
+    <label>Đơn vị tính<input name="unit" value="{{ p.unit or 'cái' }}" maxlength="20"></label>
+    <label>Đơn giá (₫)<input name="price" type="number" min="0" step="1000" value="{{ (p.price or 0)|int }}"></label>
+    <label>Tồn tối thiểu<input name="min_stock" type="number" min="0" value="{{ p.min_stock if p.min_stock is not none else 5 }}"></label>
+    <label>Nhà cung cấp
+      <select name="supplier_id">
+        <option value="">— Không —</option>
+        {% for s in suppliers %}<option value="{{ s.id }}" {{ 'selected' if p.supplier_id == s.id }}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if not p.id %}
+    <label>Số lượng ban đầu<input name="quantity" type="number" min="0" value="0"></label>
+    {% else %}
+    <label>Tồn kho hiện tại<input value="{{ p.quantity }}" disabled><small class="muted">Thay đổi qua phiếu nhập/xuất</small></label>
+    {% endif %}
+  </div>
+  <div class="form-actions">
+    <a class="btn" href="{{ url_for('products') }}">Huỷ</a>
+    <button class="btn btn-primary" type="submit">Lưu</button>
+  </div>
+</form>
+{% endblock %}

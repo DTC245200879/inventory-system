@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% set is_in = direction == 'in' %}
+{% block title %}{{ 'Nhập kho' if is_in else 'Xuất kho' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Phiếu nhập kho' if is_in else 'Phiếu xuất kho' }}</h1>
+<form method="post" class="card form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="form-grid">
+    <label>Sản phẩm *
+      <select name="product_id" required>
+        <option value="">— Chọn sản phẩm —</option>
+        {% for p in products %}
+          <option value="{{ p.id }}" {{ 'selected' if selected == p.id or request.form.get('product_id') == p.id|string }}>
+            {{ p.sku }} · {{ p.name }} (tồn: {{ p.quantity }} {{ p.unit }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Số lượng *<input name="quantity" type="number" min="1" required value="{{ request.form.get('quantity', '') }}"></label>
+    <label>Đơn giá (₫) <small class="muted">bỏ trống = giá bán hiện tại</small>
+      <input name="unit_price" type="number" min="0" step="1000" value="{{ request.form.get('unit_price', '') }}"></label>
+    {% if is_in %}
+    <label>Nhà cung cấp
+      <select name="supplier_id">
+        <option value="">— Không —</option>
+        {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="span-2">Ghi chú<input name="note" maxlength="255" value="{{ request.form.get('note', '') }}"
+      placeholder="{{ 'VD: Nhập lô hàng tháng 10' if is_in else 'VD: Xuất cho phòng Kế toán' }}"></label>
+  </div>
+  <div class="form-actions">
+    <a class="btn" href="{{ url_for('transactions') }}">Huỷ</a>
+    <button class="btn {{ 'btn-primary' if is_in else 'btn-danger' }}" type="submit">{{ 'Nhập kho' if is_in else 'Xuất kho' }}</button>
+  </div>
+</form>
+{% endblock %}

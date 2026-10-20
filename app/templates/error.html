@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block title %}Lỗi {{ code }}{% endblock %}
+{% block content %}<div class="card"><h1>{{ code }}</h1><p>{{ message }}</p><a class="btn" href="{{ url_for('dashboard') }}">Về trang chủ</a></div>{% endblock %}
+{% block public %}<div class="login-wrap"><div class="card login-card"><h1>{{ code }}</h1><p>{{ message }}</p><a class="btn" href="{{ url_for('login') }}">Đăng nhập</a></div></div>{% endblock %}

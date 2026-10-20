@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Nhà cung cấp{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Nhà cung cấp</h1>
+  <a class="btn btn-primary" href="{{ url_for('supplier_form') }}">+ Thêm nhà cung cấp</a>
+</div>
+<div class="card">
+<table>
+  <thead><tr><th>Tên</th><th>Điện thoại</th><th>Email</th><th>Địa chỉ</th><th class="num">Số SP</th><th></th></tr></thead>
+  <tbody>
+  {% for s in items %}
+    <tr><td>{{ s.name }}</td><td>{{ s.phone or '' }}</td><td>{{ s.email or '' }}</td><td>{{ s.address or '' }}</td>
+      <td class="num">{{ s.products|length }}</td>
+      <td class="actions">
+        <a class="btn btn-sm" href="{{ url_for('supplier_form', sid=s.id) }}">Sửa</a>
+        <form method="post" action="{{ url_for('supplier_delete', sid=s.id) }}" data-confirm="Xoá nhà cung cấp {{ s.name }}?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-danger" type="submit">Xoá</button>
+        </form>
+      </td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Chưa có nhà cung cấp</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

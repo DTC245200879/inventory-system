@@ -1,0 +1,130 @@
+# =====================================================================
+#  Hệ thống Quản lý Kho hàng - PHẦN 1: Web app + MySQL + phpMyAdmin + Nginx
+#  (Commit 1)  Chạy:  docker compose up -d --build
+#  Nền tảng: Ubuntu Server 24.04 LTS + Docker Engine (docker compose plugin)
+# =====================================================================
+name: inventory
+
+# Cấu hình bảo mật dùng chung (YAML anchor)
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true          # chặn leo thang đặc quyền qua setuid
+  logging:                             # xoay vòng log, tránh đầy ổ đĩa
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  # ------------------------------------------------------------ MySQL
+  db:
+    <<: *hardening
+    image: mysql:8.0
+    container_name: inventory-db
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+07:00
+      - --local-infile=0               # hardening: tắt LOAD DATA LOCAL
+      - --skip-name-resolve
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Chưa đặt MYSQL_ROOT_PASSWORD trong .env}
+      MYSQL_ROOT_HOST: localhost       # root KHÔNG đăng nhập được từ xa
+      MYSQL_DATABASE: inventory_db
+      APP_DB_USER: ${APP_DB_USER:-inventory_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Chưa đặt APP_DB_PASSWORD}
+      EXPORTER_DB_PASSWORD: ${EXPORTER_DB_PASSWORD:?Chưa đặt EXPORTER_DB_PASSWORD}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]                # chỉ nằm trong mạng nội bộ, không publish port
+    healthcheck:
+      # dùng TCP 127.0.0.1 để chỉ "healthy" khi MySQL thật đã chạy xong init
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    mem_limit: 768m
+
+  # ------------------------------------------------------------ Web app (Flask)
+  app:
+    <<: *hardening
+    build: ./app
+    image: inventory-app:1.0
+    container_name: inventory-app
+    environment:
+      DB_HOST: db
+      DB_NAME: inventory_db
+      DB_USER: ${APP_DB_USER:-inventory_app}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      SECRET_KEY: ${SECRET_KEY:?Chưa đặt SECRET_KEY}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Chưa đặt ADMIN_PASSWORD}
+      SESSION_COOKIE_SECURE: "true"
+      TZ: Asia/Ho_Chi_Minh
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [frontend, backend, monitoring]
+    read_only: true                    # hardening: filesystem chỉ đọc
+    tmpfs: [/tmp]
+    cap_drop: [ALL]                    # hardening: bỏ toàn bộ Linux capabilities
+    user: "10001:10001"
+    mem_limit: 256m
+    pids_limit: 100
+
+  # ------------------------------------------------------------ phpMyAdmin
+  phpmyadmin:
+    <<: *hardening
+    image: phpmyadmin:5.2
+    container_name: inventory-phpmyadmin
+    environment:
+      PMA_HOST: db
+      PMA_ABSOLUTE_URI: ${PUBLIC_URL:-https://localhost}/phpmyadmin/
+      UPLOAD_LIMIT: 8M
+      HIDE_PHP_VERSION: "true"
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [frontend, backend]
+    mem_limit: 256m
+
+  # ------------------------------------------------------------ Nginx reverse proxy
+  nginx:
+    <<: *hardening
+    image: nginxinc/nginx-unprivileged:1.27-alpine   # chạy bằng user nginx (UID 101), không phải root
+    container_name: inventory-nginx
+    ports:
+      - "80:8080"                      # HTTP  -> redirect sang HTTPS
+      - "443:8443"                     # HTTPS (chứng chỉ tự ký)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    environment:
+      NGINX_ENTRYPOINT_QUIET_LOGS: "1"
+    depends_on: [app, phpmyadmin]
+    networks: [frontend, monitoring]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/stub_status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# ------------------------------------------------------------ Networks
+# Network isolation:
+#  - frontend  : nginx <-> app, phpMyAdmin, Grafana
+#  - backend   : app/phpMyAdmin <-> MySQL (internal: không ra Internet, host không vào được)
+#  - monitoring: Prometheus, Grafana, Loki và các exporter
+networks:
+  frontend:
+  backend:
+    internal: true
+  monitoring:
+
+volumes:
+  db_data:
