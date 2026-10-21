@@ -1,0 +1,49 @@
+# =====================================================================
+#  PHẦN 3: Log tập trung - Loki + Promtail   (Commit 3)
+#  Chạy đầy đủ:
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml -f docker-compose.logging.yml up -d
+# =====================================================================
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  loki:
+    <<: *hardening
+    image: grafana/loki:3.1.0
+    container_name: inventory-loki
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./logging/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    networks: [monitoring]             # không publish port; Grafana truy vấn nội bộ
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    user: "10001:10001"
+    mem_limit: 512m
+
+  # Promtail đọc log của mọi container trong project qua Docker API
+  # rồi đẩy về Loki, gắn nhãn container/service/stream.
+  promtail:
+    <<: *hardening
+    image: grafana/promtail:3.1.0
+    container_name: inventory-promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./logging/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # chỉ đọc
+      - promtail_positions:/promtail
+    depends_on: [loki]
+    networks: [monitoring]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    mem_limit: 128m
+
+volumes:
+  loki_data:
+  promtail_positions:
