@@ -2,15 +2,16 @@
 
 Đề tài 5 – Môn **Triển khai và Quản trị Hệ thống Phần mềm**
 
-Website quản lý kho (nhập/xuất hàng, tồn kho, nhà cung cấp) triển khai trên **Ubuntu Server 24.04 LTS**, toàn bộ dịch vụ chạy bằng **Docker Compose**:
+Website quản lý kho (nhập/xuất hàng, tồn kho, nhà cung cấp) triển khai trên **Ubuntu Server 24.04 LTS**, toàn bộ dịch vụ chạy bằng **Docker Compose**.
+Server mẫu trong tài liệu có IP **`192.168.8.10`** – nếu server của bạn có IP khác, thay số này ở mọi chỗ.
 
 | Thành phần | Công nghệ | Truy cập |
 |---|---|---|
-| Web app | Python Flask + Gunicorn | https://localhost/ |
-| Database | MySQL 8.0 | (chỉ mạng nội bộ) |
-| Công cụ quản lý DB | phpMyAdmin 5.2 | https://localhost/phpmyadmin/ |
+| Web app | Python Flask + Gunicorn | https://192.168.8.10/ |
+| Database | MySQL 8.0 | (chỉ mạng nội bộ Docker) |
+| Công cụ quản lý DB | phpMyAdmin 5.2 | https://192.168.8.10/phpmyadmin/ |
 | Reverse proxy | Nginx 1.27 (unprivileged), HTTPS tự ký | cổng 80 → 443 |
-| Giám sát | Prometheus + Grafana + cAdvisor + node/mysqld/nginx exporter | https://localhost/grafana/ · Prometheus qua SSH tunnel |
+| Giám sát | Prometheus + Grafana + cAdvisor + node/mysqld/nginx exporter | https://192.168.8.10/grafana/ · Prometheus qua SSH tunnel |
 | Log tập trung | Loki + Promtail | Grafana → Explore → Loki |
 
 ![Dashboard](docs/screenshots/app-dashboard.png)
@@ -18,13 +19,15 @@ Website quản lý kho (nhập/xuất hàng, tồn kho, nhà cung cấp) triển
 ## Mô hình triển khai
 
 ```
- Máy Windows (trình duyệt, PowerShell/SSH)
-      │  VMware Workstation NAT (VMnet8) port forwarding
-      │  localhost:443 → 443   localhost:80 → 80   localhost:2222 → 22
+ Máy Windows (trình duyệt + PowerShell)
+      │  mạng NAT VMnet8 của VMware Workstation (192.168.8.0/24)
+      │  https://192.168.8.10      ssh dang@192.168.8.10
       ▼
- Máy ảo Ubuntu Server 24.04 LTS (IP tĩnh 192.168.X.10; 2 vCPU, 4 GB RAM, 30 GB) · UFW: 22/80/443
+ Máy ảo Ubuntu Server 24.04 LTS (IP tĩnh 192.168.8.10; 2 vCPU, 4 GB RAM, 20 GB) · UFW: 22/80/443
       └── Docker Engine + Compose plugin ── 12 container (bên dưới)
 ```
+
+Máy ảo nằm trong mạng NAT nội bộ của VMware: máy Windows chứa nó truy cập được, các máy khác trong mạng Wi-Fi thì không.
 
 ## Kiến trúc container
 
@@ -49,18 +52,20 @@ Website quản lý kho (nhập/xuất hàng, tồn kho, nhà cung cấp) triển
 
 ## Yêu cầu
 
-- Ubuntu Server 22.04/24.04 LTS (máy ảo hoặc máy thật), tối thiểu 2 vCPU, 4 GB RAM, 30 GB đĩa
+- Ubuntu Server 22.04/24.04 LTS (máy ảo hoặc máy thật), tối thiểu 2 vCPU, 4 GB RAM, 20 GB đĩa, nên đặt IP tĩnh
 - Docker Engine + Docker Compose plugin (cài từ https://get.docker.com)
 - Cổng 80 và 443 trên server đang trống
 
-## Chạy nhanh (trên server)
+## Chạy nhanh
+
+> ⚠️ Tất cả lệnh dưới đây gõ **trên server Ubuntu** (dấu nhắc dạng `dang@dangdang:~$`), không gõ trong PowerShell của Windows. Từ Windows, vào server bằng: `ssh dang@192.168.8.10`
 
 ```bash
-git clone git@github.com:<MSSV>/inventory-system.git
+git clone https://github.com/DTC245200879/inventory-system.git
 cd inventory-system
 
-bash scripts/gen-env.sh      # sinh .env với mật khẩu mạnh ngẫu nhiên
-bash scripts/gen-cert.sh     # sinh chứng chỉ HTTPS tự ký
+bash scripts/gen-env.sh      # sinh .env: mật khẩu mạnh ngẫu nhiên + PUBLIC_URL theo IP server
+bash scripts/gen-cert.sh     # sinh chứng chỉ HTTPS tự ký cho IP server
 
 # Gộp cả 3 file compose để các lệnh docker compose ngắn gọn
 echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.monitoring.yml:docker-compose.logging.yml' >> .env
@@ -68,6 +73,8 @@ echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.monitoring.yml:docker-compo
 docker compose up -d --build
 docker compose ps            # chờ db, app, nginx "healthy"
 ```
+
+Hai script tự lấy IP của server. Muốn chỉ định IP thì truyền vào, ví dụ: `bash scripts/gen-env.sh 192.168.8.10` và `bash scripts/gen-cert.sh 192.168.8.10`.
 
 Chạy từng phần (đúng thứ tự 3 commit):
 
@@ -79,18 +86,16 @@ Chạy từng phần (đúng thứ tự 3 commit):
 
 ## Đăng nhập
 
-Mật khẩu nằm trong file `.env` trên server (được in ra khi chạy `gen-env.sh`; xem lại bằng `cat .env`).
+Mật khẩu nằm trong file `.env` trên server (xem bằng `cat .env`).
 
-| Dịch vụ | URL (mở trên trình duyệt Windows) | Tài khoản |
+| Dịch vụ | Địa chỉ (mở trên trình duyệt Windows) | Tài khoản |
 |---|---|---|
-| Web app | https://localhost/ | `ADMIN_USERNAME` / `ADMIN_PASSWORD` |
-| phpMyAdmin | https://localhost/phpmyadmin/ | `APP_DB_USER` / `APP_DB_PASSWORD` (root bị chặn đăng nhập từ xa) |
-| Grafana | https://localhost/grafana/ | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` |
-| Prometheus | http://localhost:9090/targets | Chỉ bind `127.0.0.1` trên server → mở SSH tunnel: `ssh -p 2222 -L 9090:127.0.0.1:9090 <user>@localhost` |
+| Web app | https://192.168.8.10/ | `ADMIN_USERNAME` / `ADMIN_PASSWORD` |
+| phpMyAdmin | https://192.168.8.10/phpmyadmin/ | `APP_DB_USER` / `APP_DB_PASSWORD` (root bị chặn đăng nhập từ xa) |
+| Grafana | https://192.168.8.10/grafana/ | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` |
+| Prometheus | http://localhost:9090/targets | Prometheus chỉ mở trên `127.0.0.1` của server → trên Windows chạy trước `ssh -L 9090:127.0.0.1:9090 dang@192.168.8.10` (giữ cửa sổ mở) |
 
-Trình duyệt sẽ cảnh báo chứng chỉ tự ký → chọn *Advanced → Proceed to localhost*.
-
-> Nếu dùng cổng khác (vd. 8443), đặt `PUBLIC_URL=https://localhost:8443` trong `.env` rồi chạy lại `docker compose up -d`.
+Trình duyệt sẽ cảnh báo chứng chỉ tự ký → chọn *Advanced → Proceed to 192.168.8.10*.
 
 ## Cấu trúc thư mục
 
@@ -105,7 +110,7 @@ Trình duyệt sẽ cảnh báo chứng chỉ tự ký → chọn *Advanced → 
 ├── monitoring/prometheus/          # prometheus.yml, alert.rules.yml
 ├── monitoring/grafana/             # provisioning datasource + dashboard JSON
 ├── logging/                        # loki-config.yml, promtail-config.yml
-├── scripts/                        # gen-env.sh, gen-cert.sh
+├── scripts/                        # gen-env.sh, gen-cert.sh, kiem-chung.sh
 └── docs/HUONG_DAN.md               # hướng dẫn từng bước trên Ubuntu Server, LogQL, hardening, báo cáo
 ```
 
@@ -132,11 +137,12 @@ topk(5, sum by (uri) (count_over_time({service="nginx", stream="stdout"} | json 
 - App: mật khẩu hash, CSRF token, cookie `Secure/HttpOnly/SameSite`, chống open-redirect, khoá dòng khi xuất kho
 
 **Mức hệ điều hành (Ubuntu Server)**
-- Tường lửa UFW chỉ mở 22/80/443; VMware chỉ chuyển tiếp đúng 3 cổng này vào máy ảo
-- Đăng nhập GitHub bằng SSH key, SSH không cho root đăng nhập bằng mật khẩu (mặc định Ubuntu)
+- Tường lửa UFW chỉ mở 22/80/443; máy ảo nằm trong mạng NAT nội bộ của VMware
+- Đăng nhập GitHub bằng SSH key; SSH không cho root đăng nhập bằng mật khẩu (mặc định Ubuntu)
 - Tự động cập nhật bản vá bảo mật (`unattended-upgrades`)
 
-Chi tiết từng bước và cách kiểm chứng: xem [docs/HUONG_DAN.md](docs/HUONG_DAN.md).
+Kiểm chứng tất cả bằng một lệnh trên server: `bash scripts/kiem-chung.sh` (in [ĐẠT]/[CHƯA ĐẠT] cho từng biện pháp).
+Chi tiết từng bước: xem [docs/HUONG_DAN.md](docs/HUONG_DAN.md).
 
 ## Dừng / xoá
 
