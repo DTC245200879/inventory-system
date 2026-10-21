@@ -1,4 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Lỗi {{ code }}{% endblock %}
-{% block content %}<div class="card"><h1>{{ code }}</h1><p>{{ message }}</p><a class="btn" href="{{ url_for('dashboard') }}">Về trang chủ</a></div>{% endblock %}
-{% block public %}<div class="login-wrap"><div class="card login-card"><h1>{{ code }}</h1><p>{{ message }}</p><a class="btn" href="{{ url_for('login') }}">Đăng nhập</a></div></div>{% endblock %}
+{% block content %}
+<section class="card"><div class="card-body">
+  <p class="error-code">{{ code }}</p>
+  <h1>{{ message }}</h1>
+  <p class="muted">Kiểm tra lại đường dẫn hoặc quay về trang tổng quan.</p>
+  <p><br><a class="btn btn-primary" href="{{ url_for('dashboard') }}">Về trang tổng quan</a></p>
+</div></section>
+{% endblock %}
+{% block public %}
+<main class="auth-main"><div class="auth-box">
+  <p class="error-code">{{ code }}</p>
+  <h1>{{ message }}</h1>
+  <p>Đăng nhập để tiếp tục sử dụng hệ thống.</p>
+  <a class="btn btn-primary btn-block" href="{{ url_for('login') }}">Đăng nhập</a>
+</div></main>
+{% endblock %}

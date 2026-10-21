@@ -1,37 +1,97 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, item, stock_cell, status_badge, sort_th, pager, empty, delete_item %}
 {% block title %}Sản phẩm{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Sản phẩm</h1>
-  <a class="btn btn-primary" href="{{ url_for('product_form') }}">+ Thêm sản phẩm</a>
+  <div>
+    <h1>Sản phẩm</h1>
+    <p>Danh mục hàng hoá, giá bán và mức tồn tối thiểu của từng mặt hàng.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('product_form') }}">{{ icon('i-plus') }}Thêm sản phẩm</a>
+  </div>
 </div>
-<form class="toolbar" method="get">
-  <input name="q" value="{{ q }}" placeholder="Tìm theo tên, SKU, danh mục…">
-  <label class="check"><input type="checkbox" name="low" value="1" {{ 'checked' if only_low }}> Chỉ hàng sắp hết</label>
-  <button class="btn" type="submit">Lọc</button>
-</form>
-<div class="card">
-<table>
-  <thead><tr><th>SKU</th><th>Tên</th><th>Danh mục</th><th>Nhà cung cấp</th><th class="num">Đơn giá</th><th class="num">Tồn</th><th></th></tr></thead>
-  <tbody>
-  {% for p in items %}
-    <tr>
-      <td><code>{{ p.sku }}</code></td>
-      <td>{{ p.name }}</td>
-      <td>{{ p.category or '' }}</td>
-      <td>{{ p.supplier.name if p.supplier else '—' }}</td>
-      <td class="num">{{ p.price|money }}</td>
-      <td class="num"><span class="badge {{ 'badge-danger' if p.quantity == 0 else ('badge-warn' if p.is_low else 'badge-ok') }}">{{ p.quantity }} {{ p.unit }}</span></td>
-      <td class="actions">
-        <a class="btn btn-sm" href="{{ url_for('product_form', pid=p.id) }}">Sửa</a>
-        <form method="post" action="{{ url_for('product_delete', pid=p.id) }}" data-confirm="Xoá sản phẩm {{ p.sku }}?">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-danger" type="submit">Xoá</button>
-        </form>
-      </td>
-    </tr>
-  {% else %}<tr><td colspan="7" class="muted">Không có sản phẩm</td></tr>{% endfor %}
-  </tbody>
-</table>
-</div>
+
+<section class="card">
+  <form class="filters" method="get" action="{{ url_for('products') }}" data-live-form role="search">
+    <label class="f-search">Tìm kiếm
+      <span class="input-icon">{{ icon('i-search') }}<input type="search" name="q" value="{{ f.q }}" placeholder="Tên, mã SKU, danh mục, nhà cung cấp" autocomplete="off"></span>
+    </label>
+    <label class="f-sm">Danh mục
+      <select name="category">
+        <option value="">Tất cả danh mục</option>
+        {% for c in categories %}<option value="{{ c }}" {{ 'selected' if f.category == c }}>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="f-sm">Trạng thái tồn
+      <select name="status">
+        {% for v, t in (('', 'Tất cả'), ('in', 'Còn hàng'), ('low', 'Sắp hết'), ('out', 'Hết hàng'), ('attention', 'Cần nhập thêm')) %}
+        <option value="{{ v }}" {{ 'selected' if f.status == v }}>{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="f-price">
+      <label>Giá từ (₫)<input type="number" name="price_min" min="0" step="1000" value="{{ f.price_min }}" placeholder="0"></label>
+      <span>–</span>
+      <label>đến (₫)<input type="number" name="price_max" min="0" step="1000" value="{{ f.price_max }}" placeholder="Tối đa"></label>
+    </div>
+    <input type="hidden" name="sort" value="{{ f.sort }}">
+    <input type="hidden" name="dir" value="{{ f.dir }}">
+    <input type="hidden" name="supplier" value="{{ f.supplier }}">
+    <div class="f-end"><button class="btn" type="submit" data-js-hide>{{ icon('i-search') }}Lọc</button></div>
+  </form>
+
+  <div data-live-results>
+    <div class="results-meta">
+      <span>{% if filtered %}Tìm thấy {{ pg.total|num }} sản phẩm phù hợp{% else %}{{ pg.total|num }} sản phẩm{% endif %}</span>
+      {% if filtered %}<a href="{{ url_for('products') }}" data-live-link data-reset>Xoá bộ lọc</a>{% endif %}
+    </div>
+    {% if supplier %}
+    <div class="chips"><span class="chip">Nhà cung cấp: {{ supplier.name }}<a href="{{ url_with(supplier=None, page=None) }}" data-live-link aria-label="Bỏ lọc nhà cung cấp">{{ icon('i-x') }}</a></span></div>
+    {% endif %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          {{ sort_th('Sản phẩm', 'name', f) }}
+          {{ sort_th('Danh mục', 'category', f) }}
+          {{ sort_th('Nhà cung cấp', 'supplier', f) }}
+          {{ sort_th('Đơn giá', 'price', f, 'num') }}
+          {{ sort_th('Tồn kho', 'quantity', f) }}
+          <th>Trạng thái</th>
+          <th><span class="sr-only">Thao tác</span></th>
+        </tr></thead>
+        <tbody>
+        {% for p in items %}
+          <tr>
+            <td>{{ item(p, link=True) }}</td>
+            <td>{% if p.category %}<span class="badge badge-neutral">{{ p.category }}</span>{% endif %}</td>
+            <td><span class="clip" title="{{ p.supplier.name if p.supplier else '' }}">{{ p.supplier.name if p.supplier else '' }}</span></td>
+            <td class="num">{{ p.price|money }}</td>
+            <td>{{ stock_cell(p) }}</td>
+            <td>{{ status_badge(p) }}</td>
+            <td class="actions">
+              <a class="btn-icon" href="{{ url_for('product_form', pid=p.id) }}" title="Sửa" aria-label="Sửa {{ p.name }}">{{ icon('i-edit') }}</a>
+              <details class="menu">
+                <summary class="btn-icon" title="Thao tác khác" aria-label="Thao tác khác cho {{ p.name }}">{{ icon('i-more') }}</summary>
+                <div class="menu-list">
+                  <a href="{{ url_for('stock', direction='in', product_id=p.id) }}">{{ icon('i-in') }}Nhập hàng</a>
+                  <a href="{{ url_for('stock', direction='out', product_id=p.id) }}">{{ icon('i-out') }}Xuất hàng</a>
+                  <a href="{{ url_for('transactions', q=p.sku) }}">{{ icon('i-history') }}Lịch sử giao dịch</a>
+                  <hr>
+                  {{ delete_item(url_for('product_delete', pid=p.id), 'Xoá sản phẩm ' ~ p.sku ~ ' – ' ~ p.name ~ '? Không thể xoá sản phẩm đã có phiếu nhập/xuất.') }}
+                </div>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7">
+            {% if filtered %}{{ empty('i-search', 'Không tìm thấy sản phẩm phù hợp', 'Thử từ khoá khác hoặc bỏ bớt bộ lọc.') }}
+            {% else %}{{ empty('i-box-empty', 'Chưa có sản phẩm', 'Bấm "Thêm sản phẩm" để tạo mặt hàng đầu tiên.') }}{% endif %}
+          </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ pager(pg, 'sản phẩm') }}
+  </div>
+</section>
 {% endblock %}

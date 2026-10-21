@@ -1,0 +1,99 @@
+{# ---------------------------------------------------------------- thành phần dùng lại #}
+
+{% macro icon(name) -%}<svg class="icon"><use href="#{{ name }}"/></svg>{%- endmacro %}
+
+{# Ảnh đại diện sản phẩm: chưa có ảnh thật nên dùng chữ cái đầu + màu theo danh mục #}
+{% macro thumb(p, size='') -%}
+  <span class="thumb {{ size }} tone-c{{ p.category|tone }}" aria-hidden="true">{{ p.name|initials }}</span>
+{%- endmacro %}
+
+{% macro item(p, link=False) -%}
+  <div class="item">
+    {{ thumb(p) }}
+    <div>
+      {% if link %}<a class="item-name" href="{{ url_for('product_form', pid=p.id) }}">{{ p.name }}</a>
+      {% else %}<span class="item-name">{{ p.name }}</span>{% endif %}
+      <span class="item-sub code">{{ p.sku }}{% if p.category %}, {{ p.category }}{% endif %}</span>
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro status_badge(p) -%}
+  {%- if p.quantity == 0 -%}<span class="badge st-out"><span class="dot"></span>Hết hàng</span>
+  {%- elif p.is_low -%}<span class="badge st-low"><span class="dot"></span>Sắp hết</span>
+  {%- else -%}<span class="badge st-in"><span class="dot"></span>Còn hàng</span>{%- endif -%}
+{%- endmacro %}
+
+{# Thanh mức tồn: phần lấp = số tồn, vạch = mức tối thiểu. Thuộc tính SVG, không style nội tuyến #}
+{% macro meter(p) -%}
+  {%- set cap = [p.min_stock * 3, p.quantity, 1]|max -%}
+  <svg class="meter {{ 'is-out' if p.quantity == 0 else ('is-low' if p.is_low) }}" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true">
+    <rect class="m-track" width="100" height="6"/>
+    <rect class="m-fill" width="{{ (p.quantity / cap * 100)|round(1) }}" height="6"/>
+    {%- if p.min_stock > 0 %}<rect class="m-min" x="{{ [(p.min_stock / cap * 100)|round(1), 98.5]|min }}" width="1.5" height="6"/>{% endif %}
+  </svg>
+{%- endmacro %}
+
+{% macro stock_cell(p) -%}
+  <div class="stock">
+    <span class="stock-qty">{{ p.quantity|num }} {{ p.unit }} <small>/ tối thiểu {{ p.min_stock|num }}</small></span>
+    {{ meter(p) }}
+  </div>
+{%- endmacro %}
+
+{% macro delta(t) -%}
+  <span class="delta {{ 'in' if t.type == 'IN' else 'out' }}">{{ '+' if t.type == 'IN' else '−' }}{{ t.quantity|num }}</span>
+{%- endmacro %}
+
+{% macro type_badge(t) -%}
+  {%- if t.type == 'IN' -%}<span class="badge badge-in">{{ icon('i-in') }}Nhập</span>
+  {%- else -%}<span class="badge badge-out">{{ icon('i-out') }}Xuất</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro trend(value) -%}
+  {%- if value is none -%}<span class="trend flat">{{ icon('i-minus') }}Chưa có kỳ trước</span>
+  {%- elif value >= 0.05 -%}<span class="trend up">{{ icon('i-up') }}{{ value|pct }}</span>
+  {%- elif value <= -0.05 -%}<span class="trend down">{{ icon('i-down') }}{{ value|pct }}</span>
+  {%- else -%}<span class="trend flat">{{ icon('i-minus') }}0%</span>{%- endif -%}
+{%- endmacro %}
+
+{# Tiêu đề cột có sắp xếp: bấm lần đầu tăng dần, bấm lại đảo chiều #}
+{% macro sort_th(label, key, f, cls='') -%}
+  {%- set active = (f.sort or 'name') == key -%}
+  {%- set desc = active and f.dir == 'desc' -%}
+  <th class="{{ cls }}" aria-sort="{{ ('descending' if desc else 'ascending') if active else 'none' }}">
+    <a class="sort {{ 'active' if active }}" href="{{ url_with(sort=key, dir=('asc' if desc else 'desc') if active else 'asc', page=None) }}" data-live-link>
+      {{ label }}{{ icon('i-chevron-down' if desc else ('i-chevron-up' if active else 'i-sort')) }}</a>
+  </th>
+{%- endmacro %}
+
+{% macro pager(pg, noun) -%}
+  <div class="pager">
+    <span>{% if pg.total %}Hiển thị {{ pg.first|num }}–{{ pg.last|num }} trên {{ pg.total|num }} {{ noun }}{% else %}Không có {{ noun }}{% endif %}</span>
+    {% if pg.pages > 1 %}
+    <nav class="pages" aria-label="Phân trang">
+      {% if pg.has_prev %}<a href="{{ url_with(page=pg.prev_num) }}" data-live-link aria-label="Trang trước">{{ icon('i-chevron-left') }}</a>
+      {% else %}<span class="disabled">{{ icon('i-chevron-left') }}</span>{% endif %}
+      {% for n in pg.iter_pages(left_edge=1, left_current=1, right_current=2, right_edge=1) %}
+        {% if n is none %}<span class="gap">…</span>
+        {% elif n == pg.page %}<span class="current" aria-current="page">{{ n }}</span>
+        {% else %}<a href="{{ url_with(page=n) }}" data-live-link>{{ n }}</a>{% endif %}
+      {% endfor %}
+      {% if pg.has_next %}<a href="{{ url_with(page=pg.next_num) }}" data-live-link aria-label="Trang sau">{{ icon('i-chevron-right') }}</a>
+      {% else %}<span class="disabled">{{ icon('i-chevron-right') }}</span>{% endif %}
+    </nav>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro empty(icon_name, title, text='') -%}
+  <div class="empty-state">{{ icon(icon_name) }}<strong>{{ title }}</strong>{% if text %}<p>{{ text }}</p>{% endif %}</div>
+{%- endmacro %}
+
+{# Nút xoá trong menu: mở hộp thoại xác nhận (app.js) trước khi gửi form POST #}
+{% macro delete_item(action, message) -%}
+  <form method="post" action="{{ action }}" data-confirm="{{ message }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="danger">{{ icon('i-trash') }}Xoá</button>
+  </form>
+{%- endmacro %}

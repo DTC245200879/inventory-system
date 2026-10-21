@@ -1,18 +1,30 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block title %}{{ 'Sửa' if s.id else 'Thêm' }} nhà cung cấp{% endblock %}
 {% block content %}
-<h1>{{ 'Sửa nhà cung cấp' if s.id else 'Thêm nhà cung cấp' }}</h1>
-<form method="post" class="card form">
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('suppliers') }}">Nhà cung cấp</a>{{ icon('i-chevron-right') }}<span>{{ 'Sửa' if s.id else 'Thêm mới' }}</span></div>
+    <h1>{{ s.name if s.id else 'Thêm nhà cung cấp' }}</h1>
+  </div>
+</div>
+<div class="form-layout narrow">
+<form method="post" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="form-grid">
-    <label>Tên nhà cung cấp *<input name="name" value="{{ s.name or '' }}" required maxlength="150"></label>
-    <label>Điện thoại<input name="phone" value="{{ s.phone or '' }}" maxlength="30"></label>
-    <label>Email<input name="email" type="email" value="{{ s.email or '' }}" maxlength="120"></label>
-    <label>Địa chỉ<input name="address" value="{{ s.address or '' }}" maxlength="255"></label>
+  <div class="form-section">
+    <h2>Thông tin nhà cung cấp</h2>
+    <p>Dùng để ghi nhận nguồn hàng trên phiếu nhập kho.</p>
+    <div class="form-grid">
+      <label class="span-2"><span>Tên nhà cung cấp <span class="req" aria-hidden="true">*</span></span><input name="name" value="{{ s.name or '' }}" required maxlength="150"></label>
+      <label>Điện thoại<input name="phone" value="{{ s.phone or '' }}" maxlength="30" inputmode="tel" placeholder="Ví dụ: 0901 234 567"></label>
+      <label>Email<input name="email" type="email" value="{{ s.email or '' }}" maxlength="120" placeholder="ten@congty.vn"></label>
+      <label class="span-2">Địa chỉ<input name="address" value="{{ s.address or '' }}" maxlength="255"></label>
+    </div>
   </div>
   <div class="form-actions">
-    <a class="btn" href="{{ url_for('suppliers') }}">Huỷ</a>
-    <button class="btn btn-primary" type="submit">Lưu</button>
+    <a class="btn btn-ghost" href="{{ url_for('suppliers') }}">Huỷ</a>
+    <button class="btn btn-primary" type="submit">{{ 'Lưu thay đổi' if s.id else 'Thêm nhà cung cấp' }}</button>
   </div>
 </form>
+</div>
 {% endblock %}

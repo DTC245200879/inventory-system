@@ -1,31 +1,52 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, status_badge, thumb %}
 {% block title %}{{ 'Sửa' if p.id else 'Thêm' }} sản phẩm{% endblock %}
 {% block content %}
-<h1>{{ 'Sửa sản phẩm' if p.id else 'Thêm sản phẩm' }}</h1>
-<form method="post" class="card form">
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('products') }}">Sản phẩm</a>{{ icon('i-chevron-right') }}<span>{{ 'Sửa' if p.id else 'Thêm mới' }}</span></div>
+    <h1>{{ p.name if p.id else 'Thêm sản phẩm' }}</h1>
+    {% if p.id %}<p class="code">{{ p.sku }}</p>{% endif %}
+  </div>
+  {% if p.id %}<div class="head-actions">{{ status_badge(p) }}</div>{% endif %}
+</div>
+<div class="form-layout narrow">
+<form method="post" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="form-grid">
-    <label>Mã SKU *<input name="sku" value="{{ p.sku or '' }}" required maxlength="50"></label>
-    <label>Tên sản phẩm *<input name="name" value="{{ p.name or '' }}" required maxlength="150"></label>
-    <label>Danh mục<input name="category" value="{{ p.category or '' }}" maxlength="80"></label>
-    <label>Đơn vị tính<input name="unit" value="{{ p.unit or 'cái' }}" maxlength="20"></label>
-    <label>Đơn giá (₫)<input name="price" type="number" min="0" step="1000" value="{{ (p.price or 0)|int }}"></label>
-    <label>Tồn tối thiểu<input name="min_stock" type="number" min="0" value="{{ p.min_stock if p.min_stock is not none else 5 }}"></label>
-    <label>Nhà cung cấp
-      <select name="supplier_id">
-        <option value="">— Không —</option>
-        {% for s in suppliers %}<option value="{{ s.id }}" {{ 'selected' if p.supplier_id == s.id }}>{{ s.name }}</option>{% endfor %}
-      </select>
-    </label>
-    {% if not p.id %}
-    <label>Số lượng ban đầu<input name="quantity" type="number" min="0" value="0"></label>
-    {% else %}
-    <label>Tồn kho hiện tại<input value="{{ p.quantity }}" disabled><small class="muted">Thay đổi qua phiếu nhập/xuất</small></label>
-    {% endif %}
+  <div class="form-section">
+    <h2>Thông tin hàng hoá</h2>
+    <p>Mã SKU là mã duy nhất in trên nhãn hàng, dùng để tìm kiếm nhanh.</p>
+    <div class="form-grid">
+      <label><span>Mã SKU <span class="req" aria-hidden="true">*</span></span><input name="sku" value="{{ p.sku or '' }}" required maxlength="50" placeholder="Ví dụ: LAP-002"></label>
+      <label><span>Tên sản phẩm <span class="req" aria-hidden="true">*</span></span><input name="name" value="{{ p.name or '' }}" required maxlength="150"></label>
+      <label>Danh mục<input name="category" value="{{ p.category or '' }}" maxlength="80" list="category-list" placeholder="Chọn hoặc nhập danh mục mới"></label>
+      <label>Nhà cung cấp
+        <select name="supplier_id" data-combobox data-placeholder="Tìm nhà cung cấp">
+          <option value="">Không có</option>
+          {% for s in suppliers %}<option value="{{ s.id }}" {{ 'selected' if p.supplier_id == s.id }}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+  </div>
+  <div class="form-section">
+    <h2>Giá và tồn kho</h2>
+    <p>Khi số tồn bằng hoặc dưới mức tối thiểu, sản phẩm xuất hiện trong danh sách "Sắp hết hàng".</p>
+    <div class="form-grid">
+      <label>Đơn giá<span class="input-suffix"><input name="price" type="number" min="0" step="1000" value="{{ (p.price or 0)|int }}"><span>₫</span></span></label>
+      <label>Đơn vị tính<input name="unit" value="{{ p.unit or 'cái' }}" maxlength="20" placeholder="cái, hộp, ram…"></label>
+      <label>Tồn tối thiểu<input name="min_stock" type="number" min="0" value="{{ p.min_stock if p.min_stock is not none else 5 }}"></label>
+      {% if not p.id %}
+      <label>Số lượng ban đầu<input name="quantity" type="number" min="0" value="0"></label>
+      {% else %}
+      <label>Tồn kho hiện tại<input value="{{ p.quantity|num }} {{ p.unit }}" disabled><span class="hint">Số tồn chỉ thay đổi qua phiếu nhập hoặc phiếu xuất.</span></label>
+      {% endif %}
+    </div>
   </div>
   <div class="form-actions">
-    <a class="btn" href="{{ url_for('products') }}">Huỷ</a>
-    <button class="btn btn-primary" type="submit">Lưu</button>
+    <a class="btn btn-ghost" href="{{ url_for('products') }}">Huỷ</a>
+    <button class="btn btn-primary" type="submit">{{ 'Lưu thay đổi' if p.id else 'Thêm sản phẩm' }}</button>
   </div>
+  <datalist id="category-list">{% for c in categories or [] %}<option value="{{ c }}">{% endfor %}</datalist>
 </form>
+</div>
 {% endblock %}

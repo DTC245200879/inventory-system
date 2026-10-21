@@ -1,26 +1,80 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, sort_th, pager, empty, delete_item %}
 {% block title %}Nhà cung cấp{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Nhà cung cấp</h1>
-  <a class="btn btn-primary" href="{{ url_for('supplier_form') }}">+ Thêm nhà cung cấp</a>
+  <div>
+    <h1>Nhà cung cấp</h1>
+    <p>Thông tin liên hệ và số mặt hàng của từng nhà cung cấp.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn btn-primary" href="{{ url_for('supplier_form') }}">{{ icon('i-plus') }}Thêm nhà cung cấp</a>
+  </div>
 </div>
-<div class="card">
-<table>
-  <thead><tr><th>Tên</th><th>Điện thoại</th><th>Email</th><th>Địa chỉ</th><th class="num">Số SP</th><th></th></tr></thead>
-  <tbody>
-  {% for s in items %}
-    <tr><td>{{ s.name }}</td><td>{{ s.phone or '' }}</td><td>{{ s.email or '' }}</td><td>{{ s.address or '' }}</td>
-      <td class="num">{{ s.products|length }}</td>
-      <td class="actions">
-        <a class="btn btn-sm" href="{{ url_for('supplier_form', sid=s.id) }}">Sửa</a>
-        <form method="post" action="{{ url_for('supplier_delete', sid=s.id) }}" data-confirm="Xoá nhà cung cấp {{ s.name }}?">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="btn btn-sm btn-danger" type="submit">Xoá</button>
-        </form>
-      </td></tr>
-  {% else %}<tr><td colspan="6" class="muted">Chưa có nhà cung cấp</td></tr>{% endfor %}
-  </tbody>
-</table>
-</div>
+
+<section class="card">
+  <form class="filters" method="get" action="{{ url_for('suppliers') }}" data-live-form role="search">
+    <label class="f-search">Tìm kiếm
+      <span class="input-icon">{{ icon('i-search') }}<input type="search" name="q" value="{{ f.q }}" placeholder="Tên, điện thoại, email, địa chỉ" autocomplete="off"></span>
+    </label>
+    <input type="hidden" name="sort" value="{{ f.sort }}">
+    <input type="hidden" name="dir" value="{{ f.dir }}">
+    <div class="f-end"><button class="btn" type="submit" data-js-hide>{{ icon('i-search') }}Tìm</button></div>
+  </form>
+
+  <div data-live-results>
+    <div class="results-meta">
+      <span>{% if f.q %}Tìm thấy {{ pg.total|num }} nhà cung cấp{% else %}{{ pg.total|num }} nhà cung cấp{% endif %}</span>
+      {% if f.q %}<a href="{{ url_for('suppliers') }}" data-live-link data-reset>Xoá tìm kiếm</a>{% endif %}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          {{ sort_th('Nhà cung cấp', 'name', f) }}
+          <th>Liên hệ</th>
+          {{ sort_th('Số mặt hàng', 'products', f, 'num') }}
+          {{ sort_th('Giá trị hàng đang tồn', 'value', f, 'num') }}
+          <th><span class="sr-only">Thao tác</span></th>
+        </tr></thead>
+        <tbody>
+        {% for s, n, v in rows %}
+          <tr>
+            <td>
+              <div class="item">
+                <span class="thumb tone-c{{ s.name|tone }}" aria-hidden="true">{{ s.name|initials }}</span>
+                <div><a class="item-name" href="{{ url_for('supplier_form', sid=s.id) }}">{{ s.name }}</a>
+                  <span class="item-sub">{{ s.address or 'Chưa có địa chỉ' }}</span></div>
+              </div>
+            </td>
+            <td>
+              <span class="item-name">{{ s.phone or '' }}</span>
+              {% if s.email %}<a class="item-sub" href="mailto:{{ s.email }}">{{ s.email }}</a>{% endif %}
+            </td>
+            <td class="num">{{ n|num }}</td>
+            <td class="num">{{ v|money }}</td>
+            <td class="actions">
+              <a class="btn-icon" href="{{ url_for('supplier_form', sid=s.id) }}" title="Sửa" aria-label="Sửa {{ s.name }}">{{ icon('i-edit') }}</a>
+              <details class="menu">
+                <summary class="btn-icon" title="Thao tác khác" aria-label="Thao tác khác cho {{ s.name }}">{{ icon('i-more') }}</summary>
+                <div class="menu-list">
+                  <a href="{{ url_for('products', supplier=s.id) }}">{{ icon('i-tag') }}Xem sản phẩm</a>
+                  {% if s.email %}<a href="mailto:{{ s.email }}">{{ icon('i-receipt') }}Gửi email</a>{% endif %}
+                  <hr>
+                  {{ delete_item(url_for('supplier_delete', sid=s.id), 'Xoá nhà cung cấp ' ~ s.name ~ '? Sản phẩm và phiếu nhập liên quan sẽ không còn gắn với nhà cung cấp này.') }}
+                </div>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">
+            {% if f.q %}{{ empty('i-search', 'Không tìm thấy nhà cung cấp phù hợp', 'Thử từ khoá khác.') }}
+            {% else %}{{ empty('i-truck', 'Chưa có nhà cung cấp', 'Bấm "Thêm nhà cung cấp" để tạo mới.') }}{% endif %}
+          </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ pager(pg, 'nhà cung cấp') }}
+  </div>
+</section>
 {% endblock %}

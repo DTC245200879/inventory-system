@@ -1,27 +1,91 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, thumb, delta, type_badge, pager, empty %}
 {% block title %}Lịch sử giao dịch{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Lịch sử nhập / xuất</h1>
-  <div class="seg">
-    <a class="{{ 'active' if not tx_type }}" href="{{ url_for('transactions') }}">Tất cả</a>
-    <a class="{{ 'active' if tx_type == 'IN' }}" href="{{ url_for('transactions', type='IN') }}">Nhập</a>
-    <a class="{{ 'active' if tx_type == 'OUT' }}" href="{{ url_for('transactions', type='OUT') }}">Xuất</a>
+  <div>
+    <h1>Lịch sử giao dịch</h1>
+    <p>Mọi phiếu nhập và xuất kho, lọc theo thời gian, người lập và loại phiếu.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{{ url_for('transactions_export', **export_args) }}" data-export-link>{{ icon('i-sheet') }}Xuất Excel</a>
+    <a class="btn" href="{{ url_for('transactions_print', **export_args) }}" target="_blank" rel="noopener" data-export-link>{{ icon('i-printer') }}In / Lưu PDF</a>
+    <a class="btn btn-primary" href="{{ url_for('stock', direction='in') }}">{{ icon('i-plus') }}Lập phiếu</a>
   </div>
 </div>
-<div class="card">
-<table>
-  <thead><tr><th>#</th><th>Thời gian</th><th>Loại</th><th>Sản phẩm</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th><th>NCC</th><th>Ghi chú</th><th>Người tạo</th></tr></thead>
-  <tbody>
-  {% for t in items %}
-    <tr><td>{{ t.id }}</td><td>{{ t.created_at|dt }}</td>
-      <td><span class="badge {{ 'badge-in' if t.type == 'IN' else 'badge-out' }}">{{ 'Nhập' if t.type == 'IN' else 'Xuất' }}</span></td>
-      <td><code>{{ t.product.sku }}</code> {{ t.product.name }}</td>
-      <td class="num">{{ t.quantity }}</td><td class="num">{{ t.unit_price|money }}</td>
-      <td class="num">{{ (t.unit_price * t.quantity)|money }}</td>
-      <td>{{ t.supplier.name if t.supplier else '' }}</td><td>{{ t.note or '' }}</td><td>{{ t.created_by or '' }}</td></tr>
-  {% else %}<tr><td colspan="10" class="muted">Chưa có giao dịch</td></tr>{% endfor %}
-  </tbody>
-</table>
-</div>
+
+<section class="card">
+  <form class="filters" method="get" action="{{ url_for('transactions') }}" data-live-form role="search">
+    <label class="f-search">Tìm kiếm
+      <span class="input-icon">{{ icon('i-search') }}<input type="search" name="q" value="{{ f.q }}" placeholder="Tên hàng, mã SKU hoặc ghi chú" autocomplete="off"></span>
+    </label>
+    <label class="f-sm">Loại phiếu
+      <select name="type">
+        {% for v, t in (('', 'Tất cả'), ('IN', 'Nhập kho'), ('OUT', 'Xuất kho')) %}<option value="{{ v }}" {{ 'selected' if f.type == v }}>{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="f-sm">Người lập
+      <select name="user">
+        <option value="">Tất cả</option>
+        {% for u in users %}<option value="{{ u }}" {{ 'selected' if f.user == u }}>{{ u }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="f-price">
+      <label>Từ ngày<input type="date" name="date_from" value="{{ f.date_from }}" data-date-from></label>
+      <span>–</span>
+      <label>Đến ngày<input type="date" name="date_to" value="{{ f.date_to }}" data-date-to></label>
+    </div>
+    <div class="f-end">
+      <div class="seg" role="group" aria-label="Khoảng thời gian nhanh">
+        <button type="button" data-preset="today">Hôm nay</button>
+        <button type="button" data-preset="7">7 ngày</button>
+        <button type="button" data-preset="30">30 ngày</button>
+        <button type="button" data-preset="month">Tháng này</button>
+      </div>
+      <button class="btn" type="submit" data-js-hide>{{ icon('i-search') }}Lọc</button>
+    </div>
+  </form>
+
+  <div data-live-results>
+    <div class="results-meta">
+      <span>{{ period }}: {{ pg.total|num }} phiếu, nhập {{ totals.IN[1]|num }} đơn vị ({{ totals.IN[2]|money }}), xuất {{ totals.OUT[1]|num }} đơn vị ({{ totals.OUT[2]|money }})</span>
+      {% if filtered %}<a href="{{ url_for('transactions') }}" data-live-link data-reset>Xoá bộ lọc</a>{% endif %}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Số phiếu</th><th>Loại</th><th>Sản phẩm</th><th class="num">Số lượng</th>
+          <th class="num">Thành tiền</th><th>Đối tác, ghi chú</th><th>Người lập</th>
+          <th><span class="sr-only">Thao tác</span></th>
+        </tr></thead>
+        <tbody>
+        {% for t in items %}
+          <tr>
+            <td class="nowrap"><span class="item-name code">{{ 'PN' if t.type == 'IN' else 'PX' }}-{{ '%06d'|format(t.id) }}</span><span class="item-sub">{{ t.created_at|dt }}</span></td>
+            <td>{{ type_badge(t) }}</td>
+            <td>
+              <div class="item">{{ thumb(t.product, 'sm') }}
+                <div><span class="item-name">{{ t.product.name }}</span><span class="item-sub code">{{ t.product.sku }}</span></div>
+              </div>
+            </td>
+            <td class="num">{{ delta(t) }} <span class="item-sub">{{ t.product.unit }}</span></td>
+            <td class="num"><strong>{{ (t.unit_price * t.quantity)|money }}</strong><span class="item-sub">{{ t.unit_price|money }} / {{ t.product.unit }}</span></td>
+            <td class="note-cell"><span class="item-name">{{ t.supplier.name if t.supplier else '' }}</span><span class="item-sub">{{ t.note or '' }}</span></td>
+            <td>{{ t.created_by or '' }}</td>
+            <td class="actions">
+              <a class="btn-icon" href="{{ url_for('transaction_slip', tid=t.id) }}" target="_blank" rel="noopener" title="In phiếu" aria-label="In phiếu {{ t.id }}">{{ icon('i-printer') }}</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8">
+            {% if filtered %}{{ empty('i-search', 'Không có giao dịch phù hợp', 'Thử mở rộng khoảng thời gian hoặc bỏ bớt bộ lọc.') }}
+            {% else %}{{ empty('i-history', 'Chưa có giao dịch', 'Lập phiếu nhập đầu tiên để bắt đầu.') }}{% endif %}
+          </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ pager(pg, 'phiếu') }}
+  </div>
+</section>
 {% endblock %}

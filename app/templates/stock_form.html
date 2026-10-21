@@ -1,37 +1,90 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% set is_in = direction == 'in' %}
 {% block title %}{{ 'Nhập kho' if is_in else 'Xuất kho' }}{% endblock %}
 {% block content %}
-<h1>{{ 'Phiếu nhập kho' if is_in else 'Phiếu xuất kho' }}</h1>
-<form method="post" class="card form">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="form-grid">
-    <label>Sản phẩm *
-      <select name="product_id" required>
-        <option value="">— Chọn sản phẩm —</option>
-        {% for p in products %}
-          <option value="{{ p.id }}" {{ 'selected' if selected == p.id or request.form.get('product_id') == p.id|string }}>
-            {{ p.sku }} · {{ p.name }} (tồn: {{ p.quantity }} {{ p.unit }})</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Số lượng *<input name="quantity" type="number" min="1" required value="{{ request.form.get('quantity', '') }}"></label>
-    <label>Đơn giá (₫) <small class="muted">bỏ trống = giá bán hiện tại</small>
-      <input name="unit_price" type="number" min="0" step="1000" value="{{ request.form.get('unit_price', '') }}"></label>
-    {% if is_in %}
-    <label>Nhà cung cấp
-      <select name="supplier_id">
-        <option value="">— Không —</option>
-        {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
-      </select>
-    </label>
-    {% endif %}
-    <label class="span-2">Ghi chú<input name="note" maxlength="255" value="{{ request.form.get('note', '') }}"
-      placeholder="{{ 'VD: Nhập lô hàng tháng 10' if is_in else 'VD: Xuất cho phòng Kế toán' }}"></label>
+<div class="page-head">
+  <div>
+    <div class="crumbs"><a href="{{ url_for('transactions') }}">Giao dịch</a>{{ icon('i-chevron-right') }}<span>{{ 'Phiếu nhập' if is_in else 'Phiếu xuất' }}</span></div>
+    <h1>{{ 'Lập phiếu nhập kho' if is_in else 'Lập phiếu xuất kho' }}</h1>
+    <p>{{ 'Số lượng nhập được cộng ngay vào tồn kho của sản phẩm.' if is_in else 'Phiếu xuất vượt số tồn hiện có sẽ bị từ chối.' }}</p>
   </div>
-  <div class="form-actions">
-    <a class="btn" href="{{ url_for('transactions') }}">Huỷ</a>
-    <button class="btn {{ 'btn-primary' if is_in else 'btn-danger' }}" type="submit">{{ 'Nhập kho' if is_in else 'Xuất kho' }}</button>
+  <div class="head-actions">
+    <div class="seg" role="group" aria-label="Loại phiếu">
+      <a class="{{ 'active' if is_in }}" href="{{ url_for('stock', direction='in') }}">Nhập kho</a>
+      <a class="{{ 'active' if not is_in }}" href="{{ url_for('stock', direction='out') }}">Xuất kho</a>
+    </div>
   </div>
-</form>
+</div>
+
+<div class="form-layout">
+  <form method="post" class="card" data-stock-form data-direction="{{ direction }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-section">
+      <h2>Hàng hoá</h2>
+      <p>Gõ tên hoặc mã SKU để tìm nhanh, dùng phím mũi tên và Enter để chọn.</p>
+      <div class="form-grid">
+        <label class="span-2"><span>Sản phẩm <span class="req" aria-hidden="true">*</span></span>
+          <select name="product_id" required data-combobox data-placeholder="Tìm theo tên hoặc mã SKU" data-stock-product>
+            <option value="">Chọn sản phẩm</option>
+            {% for p in products %}
+              <option value="{{ p.id }}" {{ 'selected' if selected == p.id or request.form.get('product_id') == p.id|string }}
+                data-sku="{{ p.sku }}" data-name="{{ p.name }}" data-unit="{{ p.unit }}" data-price="{{ (p.price or 0)|int }}"
+                data-qty="{{ p.quantity }}" data-min="{{ p.min_stock }}" data-category="{{ p.category or '' }}"
+                data-supplier="{{ p.supplier.name if p.supplier else '' }}" data-tone="{{ p.category|tone }}"
+                data-initials="{{ p.name|initials }}" data-meta="Tồn {{ p.quantity|num }} {{ p.unit }}">{{ p.sku }} – {{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label><span>Số lượng <span class="req" aria-hidden="true">*</span></span>
+          <span class="input-suffix"><input name="quantity" type="number" min="1" required value="{{ request.form.get('quantity', '') }}" data-stock-qty><span data-unit-label>đơn vị</span></span></label>
+        <label>Đơn giá
+          <span class="input-suffix"><input name="unit_price" type="number" min="0" step="1000" value="{{ request.form.get('unit_price', '') }}" data-stock-price placeholder="Theo giá hiện tại"><span>₫</span></span>
+          <span class="hint">Bỏ trống để dùng đơn giá hiện tại của sản phẩm.</span></label>
+      </div>
+    </div>
+    <div class="form-section">
+      <h2>Chứng từ</h2>
+      <p>{{ 'Ghi rõ nguồn hàng để đối chiếu với hoá đơn của nhà cung cấp.' if is_in else 'Ghi rõ nơi nhận hàng để tiện tra cứu sau này.' }}</p>
+      <div class="form-grid">
+        {% if is_in %}
+        <label class="span-2">Nhà cung cấp
+          <select name="supplier_id" data-combobox data-placeholder="Tìm nhà cung cấp">
+            <option value="">Không ghi nhà cung cấp</option>
+            {% for s in suppliers %}<option value="{{ s.id }}" {{ 'selected' if request.form.get('supplier_id') == s.id|string }}>{{ s.name }}</option>{% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label class="span-2">Ghi chú<input name="note" maxlength="255" value="{{ request.form.get('note', '') }}"
+          placeholder="{{ 'Ví dụ: Nhập lô hàng tháng 10, hoá đơn số 0012345' if is_in else 'Ví dụ: Xuất cho phòng Kế toán' }}"></label>
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="{{ url_for('transactions') }}">Huỷ</a>
+      <button class="btn btn-primary" type="submit" data-stock-submit>{{ icon('i-in' if is_in else 'i-out') }}{{ 'Lưu phiếu nhập' if is_in else 'Lưu phiếu xuất' }}</button>
+    </div>
+  </form>
+
+  <aside class="card preview" aria-live="polite">
+    <div class="card-head"><h2>Thông tin sản phẩm</h2></div>
+    <div class="card-body">
+      <div class="pv-empty" data-pv-empty>{{ icon('i-box-empty') }}<p>Chọn sản phẩm để xem đơn giá, tồn kho hiện tại và số tồn sau phiếu này.</p></div>
+      <div data-pv hidden>
+        <div class="pv-head">
+          <span class="thumb" data-pv-thumb></span>
+          <div><span class="item-name" data-pv-name></span><span class="item-sub code" data-pv-sku></span></div>
+        </div>
+        <dl class="facts">
+          <div><dt>Đơn giá hiện tại</dt><dd data-pv-price></dd></div>
+          <div><dt>Tồn hiện tại</dt><dd data-pv-qty></dd></div>
+          <div><dt>Tồn tối thiểu</dt><dd data-pv-min></dd></div>
+          <div class="wide"><dt>Nhà cung cấp</dt><dd data-pv-supplier></dd></div>
+        </dl>
+        <div class="after" data-pv-after><span>Tồn sau phiếu này</span><strong data-pv-after-qty></strong></div>
+        <div class="after" data-pv-amount-box><span>Thành tiền dự kiến</span><strong data-pv-amount></strong></div>
+        <p class="alert alert-warn" data-pv-warn hidden></p>
+      </div>
+    </div>
+  </aside>
+</div>
 {% endblock %}

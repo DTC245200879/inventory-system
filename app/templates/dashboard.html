@@ -1,45 +1,170 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon, item, stock_cell, status_badge, delta, trend, thumb, empty %}
 {% block title %}Tổng quan{% endblock %}
 {% block content %}
-<h1>Tổng quan kho</h1>
-<div class="stats">
-  <div class="stat"><span class="stat-label">Mặt hàng</span><span class="stat-value">{{ total_products }}</span></div>
-  <div class="stat"><span class="stat-label">Tổng số lượng tồn</span><span class="stat-value">{{ "{:,}".format(total_units|int).replace(",", ".") }}</span></div>
-  <div class="stat"><span class="stat-label">Giá trị tồn kho</span><span class="stat-value">{{ stock_value|money }}</span></div>
-  <div class="stat"><span class="stat-label">Nhà cung cấp</span><span class="stat-value">{{ total_suppliers }}</span></div>
+<div class="page-head">
+  <div>
+    <h1>Tổng quan kho</h1>
+    <p>{{ total_products }} mặt hàng, {{ total_suppliers }} nhà cung cấp{% if low_stock %}, {{ low_stock|length }} mặt hàng cần nhập thêm{% endif %}.</p>
+  </div>
+  <div class="head-actions">
+    <a class="btn" href="{{ url_for('stock', direction='out') }}">{{ icon('i-out') }}Lập phiếu xuất</a>
+    <a class="btn btn-primary" href="{{ url_for('stock', direction='in') }}">{{ icon('i-in') }}Lập phiếu nhập</a>
+  </div>
 </div>
 
-<div class="grid-2">
-  <section class="card">
-    <div class="card-head"><h2>⚠️ Sắp hết hàng ({{ low_stock|length }})</h2>
-      <a href="{{ url_for('products', low=1) }}">Xem tất cả</a></div>
-    {% if low_stock %}
-    <table>
-      <thead><tr><th>SKU</th><th>Sản phẩm</th><th class="num">Tồn</th><th class="num">Tối thiểu</th><th></th></tr></thead>
-      <tbody>
-      {% for p in low_stock %}
-        <tr><td><code>{{ p.sku }}</code></td><td>{{ p.name }}</td>
-          <td class="num"><span class="badge {{ 'badge-danger' if p.quantity == 0 else 'badge-warn' }}">{{ p.quantity }}</span></td>
-          <td class="num">{{ p.min_stock }}</td>
-          <td><a class="btn btn-sm" href="{{ url_for('stock', direction='in', product_id=p.id) }}">Nhập</a></td></tr>
+<section class="kpis" aria-label="Chỉ số chính">
+  {% for k in kpis %}
+  <article class="card kpi t-{{ k.tone }}">
+    <div class="kpi-top">
+      <span class="kpi-label">{{ k.label }}</span>
+      <span class="kpi-icon">{{ icon(k.icon) }}</span>
+    </div>
+    <p class="kpi-value">{% if k.fmt == 'money' %}{{ k.value|money }}{% else %}{{ k.value|num }}<small>{{ k.unit }}</small>{% endif %}</p>
+    <div class="kpi-foot">
+      <div>{{ trend(k.delta) }}<small>so với 30 ngày trước</small></div>
+      <svg class="spark" viewBox="0 0 {{ k.spark.w }} {{ k.spark.h }}" preserveAspectRatio="none" aria-hidden="true">
+        <path class="s-area" d="{{ k.spark.area }}"/>
+        <path class="s-line" d="{{ k.spark.line }}"/>
+      </svg>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+
+<div class="dash-grid">
+  <section class="card" aria-labelledby="flow-title">
+    <div class="card-head">
+      <div>
+        <h2 id="flow-title">Lượng nhập và xuất</h2>
+        <p>Số đơn vị hàng theo từng kỳ</p>
+      </div>
+      <div class="seg" role="group" aria-label="Chọn kỳ">
+        <button type="button" aria-pressed="true" data-chart-tab="week">8 tuần</button>
+        <button type="button" aria-pressed="false" data-chart-tab="month">6 tháng</button>
+      </div>
+    </div>
+    <div class="card-body">
+      {% for key, c in (('week', week_chart), ('month', month_chart)) %}
+      <div data-chart="{{ key }}" {{ 'hidden' if key == 'month' }}>
+        <div class="chart-total">
+          <div><span class="legend"><span><i class="l-in"></i>Nhập</span></span><strong>{{ c.total_in|num }}</strong></div>
+          <div><span class="legend"><span><i class="l-out"></i>Xuất</span></span><strong>{{ c.total_out|num }}</strong></div>
+        </div>
+        <svg class="chart" viewBox="0 0 {{ c.w }} {{ c.h }}" role="img" aria-label="Biểu đồ cột lượng nhập và xuất {{ '8 tuần' if key == 'week' else '6 tháng' }} gần nhất">
+          {% for g in c.grid %}
+            <line class="{{ 'base-line' if loop.first else 'grid-line' }}" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ g.y }}" y2="{{ g.y }}"/>
+            <text class="axis" x="{{ c.left - 10 }}" y="{{ g.y + 4 }}" text-anchor="end">{{ g.label }}</text>
+          {% endfor %}
+          {% for g in c.groups %}
+          <g class="group">
+            <title>{{ g.title }}: nhập {{ g.bars[0].value|num }}, xuất {{ g.bars[1].value|num }}</title>
+            <rect class="hit" x="{{ g.cx - 28 }}" y="8" width="56" height="{{ c.base_y - 8 }}" rx="6"/>
+            {% for b in g.bars %}<rect class="bar bar-{{ b.kind }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="3"/>{% endfor %}
+            <text class="axis" x="{{ g.cx }}" y="{{ c.label_y }}" text-anchor="middle">{{ g.label }}</text>
+          </g>
+          {% endfor %}
+        </svg>
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
-    {% else %}<p class="muted">Không có sản phẩm nào dưới mức tồn tối thiểu.</p>{% endif %}
+    </div>
   </section>
 
-  <section class="card">
-    <div class="card-head"><h2>Giao dịch gần đây</h2><a href="{{ url_for('transactions') }}">Xem tất cả</a></div>
-    <table>
-      <thead><tr><th>Thời gian</th><th>Loại</th><th>Sản phẩm</th><th class="num">SL</th></tr></thead>
-      <tbody>
-      {% for t in recent %}
-        <tr><td>{{ t.created_at|dt }}</td>
-          <td><span class="badge {{ 'badge-in' if t.type == 'IN' else 'badge-out' }}">{{ 'Nhập' if t.type == 'IN' else 'Xuất' }}</span></td>
-          <td>{{ t.product.name }}</td><td class="num">{{ t.quantity }}</td></tr>
-      {% else %}<tr><td colspan="4" class="muted">Chưa có giao dịch</td></tr>{% endfor %}
-      </tbody>
-    </table>
+  <section class="card" aria-labelledby="value-title">
+    <div class="card-head">
+      <div>
+        <h2 id="value-title">Giá trị tồn theo danh mục</h2>
+        <p>Theo đơn giá hiện tại</p>
+      </div>
+    </div>
+    <div class="card-body">
+      {% if value_donut.slices %}
+      <div class="donut-wrap">
+        <svg class="donut" viewBox="0 0 {{ value_donut.size }} {{ value_donut.size }}" role="img" aria-label="Biểu đồ tròn giá trị tồn kho theo danh mục">
+          <circle class="d-track" cx="{{ value_donut.c }}" cy="{{ value_donut.c }}" r="{{ value_donut.r }}" stroke-width="{{ value_donut.stroke }}"/>
+          {% for s in value_donut.slices %}
+          <circle class="d-slice tone-{{ s.tone }}" cx="{{ value_donut.c }}" cy="{{ value_donut.c }}" r="{{ value_donut.r }}"
+                  stroke-width="{{ value_donut.stroke }}" stroke-dasharray="{{ s.dash }}" stroke-dashoffset="{{ s.offset }}">
+            <title>{{ s.label }}: {{ s.value|money }} ({{ '%.1f'|format(s.pct) }}%)</title></circle>
+          {% endfor %}
+          <text class="d-value" x="{{ value_donut.c }}" y="{{ value_donut.c + 2 }}" text-anchor="middle">{{ donut_center[0] }}</text>
+          <text class="d-unit" x="{{ value_donut.c }}" y="{{ value_donut.c + 20 }}" text-anchor="middle">{{ donut_center[1] }}</text>
+        </svg>
+        <ul class="donut-legend">
+          {% for s in value_donut.slices %}
+          <li><i class="tone-{{ s.tone }}"></i><span>{{ s.label }}</span><b>{{ s.value|money }}</b><em>{{ '%.1f'|format(s.pct)|replace('.', ',') }}%</em></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% else %}
+        {{ empty('i-chart', 'Chưa có hàng tồn', 'Giá trị tồn sẽ hiện ở đây sau phiếu nhập đầu tiên.') }}
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<div class="dash-grid">
+  <section class="card" aria-labelledby="low-title">
+    <div class="card-head">
+      <div>
+        <h2 id="low-title">Sắp hết hàng</h2>
+        <p>Mặt hàng có số tồn bằng hoặc dưới mức tối thiểu</p>
+      </div>
+      <a class="link" href="{{ url_for('products', status='attention') }}">Xem tất cả</a>
+    </div>
+    <div class="card-flush">
+      {% if low_stock %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Sản phẩm</th><th>Tồn kho</th><th>Trạng thái</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
+          <tbody>
+          {% for p in low_stock[:6] %}
+            <tr>
+              <td>{{ item(p, link=True) }}</td>
+              <td>{{ stock_cell(p) }}</td>
+              <td>{{ status_badge(p) }}</td>
+              <td class="actions"><a class="btn btn-sm btn-soft" href="{{ url_for('stock', direction='in', product_id=p.id) }}">{{ icon('i-in') }}Nhập hàng</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        {{ empty('i-check', 'Không có mặt hàng nào sắp hết', 'Tất cả sản phẩm đều trên mức tồn tối thiểu.') }}
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="recent-title">
+    <div class="card-head">
+      <div>
+        <h2 id="recent-title">Giao dịch gần đây</h2>
+        <p>7 phiếu nhập, xuất mới nhất</p>
+      </div>
+      <a class="link" href="{{ url_for('transactions') }}">Xem lịch sử</a>
+    </div>
+    <div class="card-flush">
+      {% if recent %}
+      <div class="table-wrap">
+        <table>
+          <tbody>
+          {% for t in recent %}
+            <tr>
+              <td>
+                <div class="item">{{ thumb(t.product, 'sm') }}
+                  <div><span class="item-name">{{ t.product.name }}</span><span class="item-sub">{{ t.created_at|dt }}</span></div>
+                </div>
+              </td>
+              <td class="num">{{ delta(t) }}<span class="item-sub">{{ t.product.unit }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        {{ empty('i-history', 'Chưa có giao dịch', 'Lập phiếu nhập đầu tiên để bắt đầu theo dõi tồn kho.') }}
+      {% endif %}
+    </div>
   </section>
 </div>
 {% endblock %}

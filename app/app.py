@@ -7,12 +7,12 @@ Hệ thống Quản lý Kho hàng (Inventory) - Flask + MySQL
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 
-from flask import (Flask, abort, flash, redirect, render_template, request,
-                   session, url_for)
+from flask import (Flask, Response, abort, flash, redirect, render_template,
+                   request, session, url_for)
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 from prometheus_client import Counter, Gauge
@@ -21,6 +21,9 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
+
+import charts
+import reports
 
 db = SQLAlchemy()
 csrf = CSRFProtect()
@@ -163,6 +166,25 @@ def clean(value, maxlen):
     return (value or "").strip()[:maxlen] or None
 
 
+def parse_date(value):
+    try:
+        return date.fromisoformat((value or "").strip())
+    except ValueError:
+        return None
+
+
+def fmt_int(v):
+    return f"{int(v or 0):,}".replace(",", ".")
+
+
+PER_PAGE = 10
+
+
+def product_categories():
+    return [c for (c,) in db.session.query(Product.category)
+            .filter(Product.category.isnot(None)).distinct().order_by(Product.category)]
+
+
 # ---------------------------------------------------------------- factory
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -245,36 +267,128 @@ def create_app(test_config=None):
     @app.route("/")
     @login_required
     def dashboard():
-        total_products = db.session.query(func.count(Product.id)).scalar() or 0
-        total_units = db.session.query(func.coalesce(func.sum(Product.quantity), 0)).scalar() or 0
-        stock_value = db.session.query(
-            func.coalesce(func.sum(Product.quantity * Product.price), 0)).scalar() or 0
+        today = datetime.now().date()
+        all_products = Product.query.all()
+        price_of = {p.id: float(p.price or 0) for p in all_products}
+        total_units = sum(p.quantity for p in all_products)
+        stock_value = sum(p.quantity * float(p.price or 0) for p in all_products)
         total_suppliers = db.session.query(func.count(Supplier.id)).scalar() or 0
-        low_stock = (Product.query.filter(Product.quantity <= Product.min_stock)
-                     .order_by(Product.quantity).all())
+        low_stock = sorted((p for p in all_products if p.is_low), key=lambda p: (p.quantity, p.name))
         LOW_STOCK.set(len(low_stock))
+
+        # Giao dịch 6 tháng gần nhất -> chuỗi ngày (30 ngày), tuần (8 tuần), tháng (6 tháng)
+        days = charts.day_range(today, 30)
+        day_idx = {d: i for i, d in enumerate(days)}
+        weeks = [charts.week_start(today) - timedelta(weeks=7 - i) for i in range(8)]
+        week_idx = {w: i for i, w in enumerate(weeks)}
+        months = [charts.add_months(charts.month_start(today), i - 5) for i in range(6)]
+        month_idx = {m: i for i, m in enumerate(months)}
+        prev_start = days[0] - timedelta(days=30)
+        since = datetime.combine(min(months[0], weeks[0], prev_start), time.min)
+        rows = (db.session.query(StockTransaction.created_at, StockTransaction.type,
+                                 StockTransaction.quantity, StockTransaction.product_id)
+                .filter(StockTransaction.created_at >= since).all())
+        in_day, out_day = [0] * 30, [0] * 30
+        net_units, net_value = [0] * 30, [0.0] * 30
+        in_prev = out_prev = 0
+        w_in, w_out, m_in, m_out = [0] * 8, [0] * 8, [0] * 6, [0] * 6
+        for created, typ, qty, pid in rows:
+            d = charts.as_date(created)
+            is_in = typ == "IN"
+            if d in day_idx:
+                i = day_idx[d]
+                (in_day if is_in else out_day)[i] += qty
+                net_units[i] += qty if is_in else -qty
+                net_value[i] += (qty if is_in else -qty) * price_of.get(pid, 0)
+            elif prev_start <= d < days[0]:
+                if is_in:
+                    in_prev += qty
+                else:
+                    out_prev += qty
+            wi = week_idx.get(charts.week_start(d))
+            if wi is not None:
+                (w_in if is_in else w_out)[wi] += qty
+            mi = month_idx.get(charts.month_start(d))
+            if mi is not None:
+                (m_in if is_in else m_out)[mi] += qty
+
+        # Dựng lại mức tồn cuối mỗi ngày bằng cách lùi từ hiện tại (theo đơn giá hiện tại)
+        units_series, value_series = [0] * 30, [0.0] * 30
+        u, v = total_units, stock_value
+        for i in range(29, -1, -1):
+            units_series[i], value_series[i] = u, v
+            u -= net_units[i]
+            v -= net_value[i]
+        kpis = [
+            {"label": "Giá trị tồn kho", "value": stock_value, "fmt": "money", "icon": "i-wallet",
+             "delta": charts.pct_change(stock_value, v), "spark": charts.sparkline(value_series), "tone": "indigo"},
+            {"label": "Hàng đang tồn", "value": total_units, "fmt": "int", "unit": "đơn vị", "icon": "i-cube",
+             "delta": charts.pct_change(total_units, u), "spark": charts.sparkline(units_series), "tone": "sky"},
+            {"label": "Nhập trong 30 ngày", "value": sum(in_day), "fmt": "int", "unit": "đơn vị", "icon": "i-in",
+             "delta": charts.pct_change(sum(in_day), in_prev), "spark": charts.sparkline(in_day), "tone": "emerald"},
+            {"label": "Xuất trong 30 ngày", "value": sum(out_day), "fmt": "int", "unit": "đơn vị", "icon": "i-out",
+             "delta": charts.pct_change(sum(out_day), out_prev), "spark": charts.sparkline(out_day), "tone": "rose"},
+        ]
+        week_chart = charts.bar_chart(
+            [w.strftime("%d/%m") for w in weeks], w_in, w_out,
+            titles=[f"Tuần {w:%d/%m} – {w + timedelta(days=6):%d/%m}" for w in weeks])
+        month_chart = charts.bar_chart(
+            [f"T{m.month}" for m in months], m_in, m_out,
+            titles=[f"Tháng {m.month}/{m.year}" for m in months])
+        by_cat = {}
+        for p in all_products:
+            by_cat[p.category] = by_cat.get(p.category, 0) + p.quantity * float(p.price or 0)
+        value_donut = charts.donut(by_cat.items())
         recent = (StockTransaction.query.order_by(StockTransaction.created_at.desc(),
-                                                  StockTransaction.id.desc()).limit(8).all())
-        return render_template("dashboard.html", total_products=total_products,
-                               total_units=total_units, stock_value=stock_value,
-                               total_suppliers=total_suppliers, low_stock=low_stock,
-                               recent=recent)
+                                                  StockTransaction.id.desc()).limit(7).all())
+        return render_template(
+            "dashboard.html", kpis=kpis, week_chart=week_chart, month_chart=month_chart,
+            value_donut=value_donut, donut_center=charts.short_money(value_donut["total"]),
+            low_stock=low_stock, recent=recent, total_products=len(all_products),
+            total_suppliers=total_suppliers,
+            out_count=sum(1 for p in all_products if p.quantity == 0))
 
     # ------------------------------------------------ products
+    PRODUCT_SORTS = {"name": Product.name, "sku": Product.sku, "category": Product.category,
+                     "supplier": Supplier.name, "price": Product.price, "quantity": Product.quantity}
+
     @app.route("/products")
     @login_required
     def products():
-        q = request.args.get("q", "").strip()
-        only_low = request.args.get("low") == "1"
-        query = Product.query
-        if q:
-            like = f"%{q}%"
+        f = {k: request.args.get(k, "").strip()
+             for k in ("q", "category", "status", "price_min", "price_max", "supplier", "sort", "dir")}
+        if request.args.get("low") == "1" and not f["status"]:
+            f["status"] = "attention"           # liên kết cũ từ trang tổng quan
+        query = Product.query.outerjoin(Supplier, Product.supplier_id == Supplier.id)
+        if f["q"]:
+            like = f"%{f['q']}%"
             query = query.filter(or_(Product.name.like(like), Product.sku.like(like),
-                                     Product.category.like(like)))
-        if only_low:
+                                     Product.category.like(like), Supplier.name.like(like)))
+        if f["category"]:
+            query = query.filter(Product.category == f["category"])
+        if f["status"] == "in":
+            query = query.filter(Product.quantity > Product.min_stock)
+        elif f["status"] == "low":
+            query = query.filter(Product.quantity <= Product.min_stock, Product.quantity > 0)
+        elif f["status"] == "out":
+            query = query.filter(Product.quantity == 0)
+        elif f["status"] == "attention":
             query = query.filter(Product.quantity <= Product.min_stock)
-        items = query.order_by(Product.name).all()
-        return render_template("products.html", items=items, q=q, only_low=only_low)
+        if f["price_min"]:
+            query = query.filter(Product.price >= to_money(f["price_min"]))
+        if f["price_max"]:
+            query = query.filter(Product.price <= to_money(f["price_max"]))
+        supplier = db.session.get(Supplier, to_int(f["supplier"])) if f["supplier"] else None
+        if supplier:
+            query = query.filter(Product.supplier_id == supplier.id)
+        col = PRODUCT_SORTS.get(f["sort"], Product.name)
+        query = query.order_by(col.desc() if f["dir"] == "desc" else col.asc(), Product.id)
+        pg = query.paginate(page=to_int(request.args.get("page"), 1, minimum=1),
+                            per_page=PER_PAGE, error_out=False)
+        categories = product_categories()
+        filtered = any(f[k] for k in ("q", "category", "status", "price_min", "price_max", "supplier"))
+        return render_template("products.html", pg=pg, items=pg.items, f=f, categories=categories,
+                               supplier=supplier, filtered=filtered)
 
     @app.route("/products/new", methods=["GET", "POST"])
     @app.route("/products/<int:pid>/edit", methods=["GET", "POST"])
@@ -288,7 +402,7 @@ def create_app(test_config=None):
             name = clean(request.form.get("name"), 150)
             if not sku or not name:
                 flash("Mã SKU và tên sản phẩm là bắt buộc", "error")
-                return render_template("product_form.html", p=product, suppliers=Supplier.query.all())
+                return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.all())
             product.sku = sku.upper()
             product.name = name
             product.category = clean(request.form.get("category"), 80)
@@ -306,12 +420,12 @@ def create_app(test_config=None):
             except IntegrityError:
                 db.session.rollback()
                 flash(f"Mã SKU {product.sku} đã tồn tại", "error")
-                return render_template("product_form.html", p=product, suppliers=Supplier.query.all())
+                return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.all())
             log_event(logging.INFO, "product_updated" if pid else "product_created",
                       sku=product.sku, product_id=product.id)
             flash("Đã lưu sản phẩm", "success")
             return redirect(url_for("products"))
-        return render_template("product_form.html", p=product, suppliers=Supplier.query.order_by(Supplier.name).all())
+        return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.order_by(Supplier.name).all())
 
     @app.route("/products/<int:pid>/delete", methods=["POST"])
     @login_required
@@ -331,8 +445,22 @@ def create_app(test_config=None):
     @app.route("/suppliers")
     @login_required
     def suppliers():
-        items = Supplier.query.order_by(Supplier.name).all()
-        return render_template("suppliers.html", items=items)
+        f = {k: request.args.get(k, "").strip() for k in ("q", "sort", "dir")}
+        stats = (db.session.query(Product.supplier_id.label("sid"), func.count(Product.id).label("n"),
+                                  func.coalesce(func.sum(Product.quantity * Product.price), 0).label("v"))
+                 .group_by(Product.supplier_id).subquery())
+        n_col, v_col = func.coalesce(stats.c.n, 0), func.coalesce(stats.c.v, 0)
+        query = (db.session.query(Supplier, n_col.label("n"), v_col.label("v"))
+                 .outerjoin(stats, stats.c.sid == Supplier.id))
+        if f["q"]:
+            like = f"%{f['q']}%"
+            query = query.filter(or_(Supplier.name.like(like), Supplier.phone.like(like),
+                                     Supplier.email.like(like), Supplier.address.like(like)))
+        col = {"products": n_col, "value": v_col}.get(f["sort"], Supplier.name)
+        query = query.order_by(col.desc() if f["dir"] == "desc" else col.asc(), Supplier.id)
+        pg = query.paginate(page=to_int(request.args.get("page"), 1, minimum=1),
+                            per_page=PER_PAGE, error_out=False)
+        return render_template("suppliers.html", pg=pg, rows=pg.items, f=f)
 
     @app.route("/suppliers/new", methods=["GET", "POST"])
     @app.route("/suppliers/<int:sid>/edit", methods=["GET", "POST"])
@@ -428,16 +556,94 @@ def create_app(test_config=None):
                                products=all_products, suppliers=all_suppliers,
                                selected=to_int(request.args.get("product_id")))
 
+    TX_FILTERS = ("q", "type", "user", "date_from", "date_to")
+
+    def tx_filters():
+        return {k: request.args.get(k, "").strip() for k in TX_FILTERS}
+
+    def tx_query(f):
+        query = StockTransaction.query.join(Product, StockTransaction.product_id == Product.id)
+        if f["type"] in ("IN", "OUT"):
+            query = query.filter(StockTransaction.type == f["type"])
+        if f["user"]:
+            query = query.filter(StockTransaction.created_by == f["user"])
+        if f["q"]:
+            like = f"%{f['q']}%"
+            query = query.filter(or_(Product.name.like(like), Product.sku.like(like),
+                                     StockTransaction.note.like(like)))
+        d_from, d_to = parse_date(f["date_from"]), parse_date(f["date_to"])
+        if d_from:
+            query = query.filter(StockTransaction.created_at >= datetime.combine(d_from, time.min))
+        if d_to:
+            query = query.filter(StockTransaction.created_at < datetime.combine(d_to + timedelta(days=1), time.min))
+        return query
+
+    def tx_period(f):
+        d_from, d_to = parse_date(f["date_from"]), parse_date(f["date_to"])
+        if d_from and d_to:
+            return f"Từ ngày {d_from:%d/%m/%Y} đến ngày {d_to:%d/%m/%Y}"
+        if d_from:
+            return f"Từ ngày {d_from:%d/%m/%Y}"
+        if d_to:
+            return f"Đến ngày {d_to:%d/%m/%Y}"
+        return "Toàn bộ thời gian"
+
+    def tx_totals(query):
+        totals = {"IN": [0, 0, 0.0], "OUT": [0, 0, 0.0]}     # số phiếu, số lượng, giá trị
+        for typ, cnt, qty, val in (query.with_entities(
+                StockTransaction.type, func.count(StockTransaction.id),
+                func.coalesce(func.sum(StockTransaction.quantity), 0),
+                func.coalesce(func.sum(StockTransaction.quantity * StockTransaction.unit_price), 0))
+                .group_by(StockTransaction.type).all()):
+            totals[typ] = [cnt, int(qty), float(val)]
+        return totals
+
+    def tx_ordered(query):
+        return query.order_by(StockTransaction.created_at.desc(), StockTransaction.id.desc())
+
     @app.route("/transactions")
     @login_required
     def transactions():
-        tx_type = request.args.get("type", "")
-        query = StockTransaction.query
-        if tx_type in ("IN", "OUT"):
-            query = query.filter_by(type=tx_type)
-        items = query.order_by(StockTransaction.created_at.desc(),
-                               StockTransaction.id.desc()).limit(200).all()
-        return render_template("transactions.html", items=items, tx_type=tx_type)
+        f = tx_filters()
+        query = tx_query(f)
+        pg = tx_ordered(query).paginate(page=to_int(request.args.get("page"), 1, minimum=1),
+                                        per_page=15, error_out=False)
+        users = [u for (u,) in db.session.query(StockTransaction.created_by)
+                 .filter(StockTransaction.created_by.isnot(None)).distinct().order_by(StockTransaction.created_by)]
+        export_args = {k: v for k, v in f.items() if v}
+        return render_template("transactions.html", pg=pg, items=pg.items, f=f, users=users,
+                               totals=tx_totals(query), period=tx_period(f), export_args=export_args,
+                               filtered=bool(export_args), tx_type=f["type"])
+
+    @app.route("/transactions/export.xlsx")
+    @login_required
+    def transactions_export():
+        f = tx_filters()
+        items = tx_ordered(tx_query(f)).limit(10000).all()
+        data = reports.transactions_xlsx(items, tx_period(f))
+        log_event(logging.INFO, "report_exported", format="xlsx", rows=len(items))
+        filename = f"lich-su-giao-dich-{datetime.now():%Y%m%d-%H%M}.xlsx"
+        return Response(data, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @app.route("/transactions/print")
+    @login_required
+    def transactions_print():
+        f = tx_filters()
+        query = tx_query(f)
+        items = tx_ordered(query).limit(2000).all()
+        log_event(logging.INFO, "report_printed", rows=len(items))
+        return render_template("transactions_print.html", items=items, totals=tx_totals(query),
+                               period=tx_period(f), f=f, generated_at=datetime.now(),
+                               slip_code=reports.slip_code)
+
+    @app.route("/transactions/<int:tid>/slip")
+    @login_required
+    def transaction_slip(tid):
+        tx = db.session.get(StockTransaction, tid) or abort(404)
+        amount = float(tx.unit_price) * tx.quantity
+        return render_template("slip.html", t=tx, code=reports.slip_code(tx), amount=amount,
+                               amount_words=reports.so_thanh_chu(amount))
 
     # ------------------------------------------------ errors & filters
     @app.errorhandler(404)
@@ -459,6 +665,36 @@ def create_app(test_config=None):
     @app.template_filter("dt")
     def dt(v):
         return v.strftime("%d/%m/%Y %H:%M") if v else ""
+
+    @app.template_filter("num")
+    def num(v):
+        return fmt_int(v)
+
+    @app.template_filter("tone")
+    def tone(v):
+        """Màu cố định cho mỗi danh mục (0..5) để ảnh đại diện sản phẩm dễ nhận ra."""
+        return sum(ord(c) for c in (v or "")) % 6
+
+    @app.template_filter("initials")
+    def initials(v):
+        words = [w for w in (v or "").split() if w[:1].isalnum()]
+        return "".join(w[0] for w in words[:2]).upper() or "?"
+
+    @app.template_filter("pct")
+    def pct(v):
+        return f"{abs(v):,.1f}".replace(".", ",") + "%"
+
+    @app.template_global()
+    def url_with(**changes):
+        """URL trang hiện tại, giữ bộ lọc đang dùng và thay các tham số được truyền vào."""
+        args = request.args.to_dict()
+        args.pop("low", None)
+        for k, v in changes.items():
+            if v in (None, ""):
+                args.pop(k, None)
+            else:
+                args[k] = v
+        return url_for(request.endpoint, **(request.view_args or {}), **args)
 
     @app.context_processor
     def inject_user():

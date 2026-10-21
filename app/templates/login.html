@@ -1,17 +1,34 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block title %}Đăng nhập{% endblock %}
 {% block public %}
-<div class="login-wrap">
-  <form method="post" class="card login-card">
-    <h1>📦 Quản lý Kho hàng</h1>
-    <p class="muted">Đăng nhập để tiếp tục</p>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}<div class="flash flash-{{ cat }}">{{ msg }}</div>{% endfor %}
-    {% endwith %}
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <label>Tên đăng nhập<input name="username" required autocomplete="username" autofocus></label>
-    <label>Mật khẩu<input name="password" type="password" required autocomplete="current-password"></label>
-    <button class="btn btn-primary btn-block" type="submit">Đăng nhập</button>
-  </form>
+<div class="auth">
+  <section class="auth-side">
+    <div class="brand"><span class="brand-logo">{{ icon('i-cube') }}</span><span>KhoHàng<small>Quản lý kho hàng</small></span></div>
+    <div>
+      <h2>Nắm rõ hàng tồn, nhập xuất có kiểm soát.</h2>
+      <ul class="auth-points">
+        <li>{{ icon('i-chart') }}<span>Tổng quan giá trị tồn kho, lượng nhập xuất theo tuần và tháng.</span></li>
+        <li>{{ icon('i-shield') }}<span>Phiếu xuất vượt số tồn bị chặn ngay khi lập phiếu.</span></li>
+        <li>{{ icon('i-sheet') }}<span>Xuất báo cáo Excel, in phiếu nhập, phiếu xuất kho.</span></li>
+      </ul>
+    </div>
+    <p class="auth-foot">Đề tài 5 – Triển khai và Quản trị Hệ thống Phần mềm</p>
+  </section>
+  <main class="auth-main">
+    <div class="auth-box">
+      <h1>Đăng nhập</h1>
+      <p>Dùng tài khoản quản trị kho để tiếp tục.</p>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}<div class="alert alert-{{ 'success' if cat == 'success' else 'error' }}" role="alert">{{ icon('i-alert') }}<p>{{ msg }}</p></div>{% endfor %}
+      {% endwith %}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Tên đăng nhập<input name="username" required autocomplete="username" autofocus></label>
+        <label>Mật khẩu<input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn btn-primary btn-block" type="submit">Đăng nhập</button>
+      </form>
+    </div>
+  </main>
 </div>
 {% endblock %}

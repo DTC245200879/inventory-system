@@ -85,31 +85,56 @@ fi
 # ---------------------------------------------------------------------
 sec "3. Log tập trung: Loki + Promtail (LogQL)"
 if running inventory-loki; then
-  lokiget() { docker exec inventory-prometheus wget -qO- -T 5 "http://loki:3100$1" 2>/dev/null; }
+  # Gọi API của Loki từ một container cùng mạng monitoring có sẵn wget
+  # (Nginx/Grafana dùng Alpine nên phân giải được tên "loki"; Loki không publish cổng ra host)
+  lokiget() {
+    local c out first=""
+    for c in inventory-nginx inventory-grafana inventory-prometheus; do
+      if out=$(docker exec "$c" wget -qO- -T 5 "http://loki:3100$1" 2>&1); then
+        printf '%s\n' "$out"; return 0
+      fi
+      [ -z "$first" ] && first="$c: $(printf '%s' "$out" | head -1)"
+    done
+    printf '%s\n' "$first"; return 1
+  }
   logql() {   # chạy 1 câu LogQL dạng metric (instant query) qua API của Loki
-    local enc
+    local enc raw
     enc=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1")
-    lokiget "/loki/api/v1/query?query=${enc}" | python3 -c '
+    if ! raw=$(lokiget "/loki/api/v1/query?query=${enc}"); then
+      echo "lỗi: $(printf '%s' "$raw" | head -1 | cut -c1-120)"; return
+    fi
+    printf '%s' "$raw" | python3 -c '
 import json, sys
 res = json.load(sys.stdin)["data"]["result"]
 if not res:
     print("(chưa có log khớp)")
 for r in res:
     lbl = ",".join("%s=%s" % kv for kv in sorted(r["metric"].items())) or "tổng"
-    print("%-28s %s" % (lbl, r["value"][1]))' 2>/dev/null
+    print("%-28s %s" % (lbl, r["value"][1]))' 2>/dev/null || echo "lỗi: $(printf '%s' "$raw" | head -1 | cut -c1-120)"
   }
   READY=$(lokiget /ready)
-  echo "      Loki /ready: ${READY:-không phản hồi}"
-  [ "$(echo "$READY" | tr -d '[:space:]')" = "ready" ] && ok "Loki sẵn sàng" || bad "Loki chưa sẵn sàng"
+  if [ "$(printf '%s' "$READY" | tr -d '[:space:]')" = "ready" ]; then
+    echo "      Loki /ready: ready"
+  else
+    # wget không in nội dung khi gặp lỗi HTTP -> đọc thẳng phản hồi bằng nc để biết lý do
+    WHY=$(docker exec inventory-nginx sh -c 'printf "GET /ready HTTP/1.0\r\nHost: loki\r\n\r\n" | nc -w 5 loki 3100' 2>&1 \
+          | tr -d '\r' | awk 'NR == 1 {print} body && NF {print} !NF {body = 1}' | head -4)
+    echo "      Loki /ready:"
+    echo "${WHY:-$READY}" | sed 's/^/        /' | show
+    note "Endpoint /ready của Loki chưa báo sẵn sàng; kết quả LogQL bên dưới cho biết Loki có hoạt động hay không"
+  fi
   Q1='sum by (service) (count_over_time({container=~"inventory-.+"}[1h]))'
   Q2='sum by (status_class) (count_over_time({service="nginx", status_class=~".+"}[1h]))'
   Q3='sum by (event) (count_over_time({service="app"} | logfmt | __error__="" | event=~"login_failed|stock_in|stock_out|stock_out_rejected" [24h]))'
+  Q1OUT=""
   for q in "$Q1" "$Q2" "$Q3"; do
     echo "      LogQL> $q"
-    logql "$q" | sed 's/^/        /' | show
+    out=$(logql "$q")
+    echo "$out" | sed 's/^/        /' | show
+    [ "$q" = "$Q1" ] && Q1OUT="$out"
   done
-  SERVICES=$(logql "$Q1" | grep -c 'service=')
-  [ "$SERVICES" -gt 0 ] && ok "Promtail đã đẩy log của $SERVICES service về Loki" || bad "Loki chưa có log nào"
+  SERVICES=$(echo "$Q1OUT" | grep -c 'service=')
+  [ "$SERVICES" -gt 0 ] && ok "Loki nhận log của $SERVICES service từ Promtail và trả lời truy vấn LogQL" || bad "Loki chưa có log nào / không trả lời truy vấn"
 else
   note "Chưa chạy phần 3 (Loki/Promtail) - bỏ qua"
 fi
@@ -166,7 +191,8 @@ echo "      \$ curl -kv ${URL}/ (thông tin TLS)"
 curl -skv --max-time 5 "${URL}/" -o /dev/null 2>&1 | grep -E 'SSL connection using|subject:|issuer:|expire date' | sed 's/^\* *//' | show
 HS=$(curl -skI --max-time 5 "${URL}/login" | tr -d '\r')
 echo "      \$ curl -kI ${URL}/login"
-echo "$HS" | grep -iE '^(HTTP|server|strict-transport|content-security|x-frame|x-content-type|referrer-policy|permissions-policy|cross-origin|set-cookie)' | cut -c1-150 | show
+echo "$HS" | grep -iE '^(HTTP|server|strict-transport|content-security|x-frame|x-content-type|referrer-policy|permissions-policy|cross-origin|set-cookie)' \
+  | sed -E 's/^(set-cookie: *[^=]+=)[^;]*/\1<ẩn>/I' | cut -c1-150 | show
 MISSING=""
 for h in Strict-Transport-Security Content-Security-Policy X-Frame-Options X-Content-Type-Options Referrer-Policy Permissions-Policy; do
   echo "$HS" | grep -qi "^$h:" || MISSING="$MISSING $h"

@@ -3,37 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Quản lý Kho{% endblock %} · Inventory</title>
+  <title>{% block title %}Tổng quan{% endblock %} | KhoHàng</title>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/be-vietnam-pro-vietnamese-400-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
+{% include "_icons.html" %}
 {% if current_user %}
-<div class="layout">
-  <aside class="sidebar">
-    <div class="brand">📦 <span>KhoHàng</span></div>
-    <nav>
-      {% set ep = request.endpoint %}
-      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' }}">Tổng quan</a>
-      <a href="{{ url_for('products') }}" class="{{ 'active' if ep in ('products','product_form') }}">Sản phẩm</a>
-      <a href="{{ url_for('suppliers') }}" class="{{ 'active' if ep in ('suppliers','supplier_form') }}">Nhà cung cấp</a>
-      <a href="{{ url_for('stock', direction='in') }}" class="{{ 'active' if ep == 'stock' and request.view_args.direction == 'in' }}">Nhập kho</a>
-      <a href="{{ url_for('stock', direction='out') }}" class="{{ 'active' if ep == 'stock' and request.view_args.direction == 'out' }}">Xuất kho</a>
-      <a href="{{ url_for('transactions') }}" class="{{ 'active' if ep == 'transactions' }}">Lịch sử giao dịch</a>
+  {% set ep = request.endpoint %}
+  {% set dir = request.view_args.direction if request.view_args else None %}
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <span class="brand-logo"><svg class="icon"><use href="#i-cube"/></svg></span>
+      <span>KhoHàng<small>Quản lý kho hàng</small></span>
+    </a>
+    <nav class="nav" aria-label="Điều hướng chính">
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if ep == 'dashboard' }}"><svg class="icon"><use href="#i-dashboard"/></svg>Tổng quan</a>
+      <p class="nav-title">Danh mục</p>
+      <a href="{{ url_for('products') }}" class="{{ 'active' if ep in ('products', 'product_form') }}"><svg class="icon"><use href="#i-tag"/></svg>Sản phẩm</a>
+      <a href="{{ url_for('suppliers') }}" class="{{ 'active' if ep in ('suppliers', 'supplier_form') }}"><svg class="icon"><use href="#i-truck"/></svg>Nhà cung cấp</a>
+      <p class="nav-title">Nghiệp vụ kho</p>
+      <a href="{{ url_for('stock', direction='in') }}" class="{{ 'active' if ep == 'stock' and dir == 'in' }}"><svg class="icon"><use href="#i-in"/></svg>Nhập kho</a>
+      <a href="{{ url_for('stock', direction='out') }}" class="{{ 'active' if ep == 'stock' and dir == 'out' }}"><svg class="icon"><use href="#i-out"/></svg>Xuất kho</a>
+      <a href="{{ url_for('transactions') }}" class="{{ 'active' if ep == 'transactions' }}"><svg class="icon"><use href="#i-history"/></svg>Lịch sử giao dịch</a>
     </nav>
-    <form method="post" action="{{ url_for('logout') }}" class="logout">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <span class="muted">👤 {{ current_user }}</span>
-      <button type="submit" class="btn btn-ghost">Đăng xuất</button>
-    </form>
+    <div class="account">
+      <span class="avatar" aria-hidden="true">{{ current_user[:1]|upper }}</span>
+      <span class="account-name">{{ current_user }}<small>Quản trị kho</small></span>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="side-btn" title="Đăng xuất" aria-label="Đăng xuất"><svg class="icon"><use href="#i-logout"/></svg></button>
+      </form>
+    </div>
   </aside>
-  <main class="content">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}<div class="flash flash-{{ cat }}">{{ msg }}</div>{% endfor %}
-    {% endwith %}
-    {% block content %}{% endblock %}
-  </main>
-</div>
+  <div class="scrim" data-nav-close></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button type="button" class="btn-icon" data-nav-toggle aria-controls="sidebar" aria-label="Mở menu"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-logo"><svg class="icon"><use href="#i-cube"/></svg></span>KhoHàng</a>
+    </header>
+    <main class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages if cat != 'success' %}
+          <div class="alert alert-{{ cat }}" role="alert"><svg class="icon"><use href="#i-alert"/></svg><p>{{ msg }}</p></div>
+        {% endfor %}
+        {% set ok = messages|selectattr(0, 'equalto', 'success')|list %}
+        {% if ok %}
+        <div class="toasts" aria-live="polite">
+          {% for cat, msg in ok %}
+          <div class="toast" role="status"><svg class="icon"><use href="#i-check"/></svg><p>{{ msg }}</p>
+            <button type="button" class="btn-icon" data-toast-close aria-label="Đóng"><svg class="icon"><use href="#i-x"/></svg></button></div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <dialog class="dialog" id="confirm-dialog">
+    <div class="dialog-icon"><svg class="icon"><use href="#i-trash"/></svg></div>
+    <h2 data-confirm-title>Xác nhận xoá</h2>
+    <p data-confirm-text></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-confirm-cancel>Huỷ</button>
+      <button type="button" class="btn btn-danger" data-confirm-ok>Xoá</button>
+    </div>
+  </dialog>
 {% else %}
   {% block public %}{% endblock %}
 {% endif %}

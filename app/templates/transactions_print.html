@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Báo cáo nhập xuất kho | KhoHàng</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body class="print-body" data-autoprint>
+<div class="print-bar no-print">
+  <button type="button" class="btn btn-primary" data-print>In / Lưu thành PDF</button>
+  <a class="btn" href="{{ url_for('transactions', **f) }}">Quay lại</a>
+</div>
+<div class="paper landscape">
+  <div class="paper-head">
+    <div class="org"><strong>KHO HÀNG</strong>Hệ thống quản lý kho</div>
+    <div class="right">Ngày in: {{ generated_at|dt }}</div>
+  </div>
+  <h1>BÁO CÁO NHẬP – XUẤT KHO</h1>
+  <p class="sub">{{ period }}{% if f.type %}, chỉ phiếu {{ 'nhập' if f.type == 'IN' else 'xuất' }}{% endif %}{% if f.user %}, người lập: {{ f.user }}{% endif %}{% if f.q %}, từ khoá: "{{ f.q }}"{% endif %}</p>
+  <table>
+    <thead><tr>
+      <th>STT</th><th>Số phiếu</th><th>Thời gian</th><th>Mã hàng</th><th>Tên hàng</th><th>ĐVT</th>
+      <th>Nhập</th><th>Xuất</th><th>Đơn giá</th><th>Thành tiền</th><th>Nhà cung cấp / ghi chú</th><th>Người lập</th>
+    </tr></thead>
+    <tbody>
+    {% for t in items %}
+      <tr>
+        <td class="center">{{ loop.index }}</td>
+        <td>{{ slip_code(t) }}</td>
+        <td>{{ t.created_at|dt }}</td>
+        <td>{{ t.product.sku }}</td>
+        <td>{{ t.product.name }}</td>
+        <td class="center">{{ t.product.unit }}</td>
+        <td class="right">{{ t.quantity|num if t.type == 'IN' else '' }}</td>
+        <td class="right">{{ t.quantity|num if t.type == 'OUT' else '' }}</td>
+        <td class="right">{{ t.unit_price|money }}</td>
+        <td class="right">{{ (t.unit_price * t.quantity)|money }}</td>
+        <td>{{ t.supplier.name if t.supplier else '' }}{% if t.supplier and t.note %}; {% endif %}{{ t.note or '' }}</td>
+        <td>{{ t.created_by or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="12" class="center">Không có giao dịch trong khoảng đã chọn.</td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="total-row"><td colspan="6">Cộng nhập ({{ totals.IN[0]|num }} phiếu)</td><td class="right">{{ totals.IN[1]|num }}</td><td></td><td></td><td class="right">{{ totals.IN[2]|money }}</td><td colspan="2"></td></tr>
+      <tr class="total-row"><td colspan="6">Cộng xuất ({{ totals.OUT[0]|num }} phiếu)</td><td></td><td class="right">{{ totals.OUT[1]|num }}</td><td></td><td class="right">{{ totals.OUT[2]|money }}</td><td colspan="2"></td></tr>
+    </tfoot>
+  </table>
+  <div class="signs three">
+    <div><b>Người lập báo cáo</b><i>(Ký, họ tên)</i>{{ current_user }}</div>
+    <div><b>Thủ kho</b><i>(Ký, họ tên)</i></div>
+    <div><b>Kế toán trưởng</b><i>(Ký, họ tên)</i></div>
+  </div>
+</div>
+</body>
+</html>
