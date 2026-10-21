@@ -85,51 +85,30 @@ fi
 # ---------------------------------------------------------------------
 sec "3. Log tập trung: Loki + Promtail (LogQL)"
 if running inventory-loki; then
-  # Gọi API của Loki từ một container cùng mạng monitoring có sẵn wget
-  # (Nginx/Grafana dùng Alpine nên phân giải được tên "loki"; Loki không publish cổng ra host)
-  lokiget() {
-    local c out first=""
-    for c in inventory-nginx inventory-grafana inventory-prometheus; do
-      if out=$(docker exec "$c" wget -qO- -T 5 "http://loki:3100$1" 2>&1); then
-        printf '%s\n' "$out"; return 0
-      fi
-      [ -z "$first" ] && first="$c: $(printf '%s' "$out" | head -1)"
-    done
-    printf '%s\n' "$first"; return 1
-  }
+  lokiget() { docker exec inventory-prometheus wget -qO- -T 5 "http://loki:3100$1" 2>/dev/null; }
   logql() {   # chạy 1 câu LogQL dạng metric (instant query) qua API của Loki
-    local enc raw
+    local enc
     enc=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1")
-    if ! raw=$(lokiget "/loki/api/v1/query?query=${enc}"); then
-      echo "lỗi: $(printf '%s' "$raw" | head -1 | cut -c1-120)"; return
-    fi
-    printf '%s' "$raw" | python3 -c '
+    lokiget "/loki/api/v1/query?query=${enc}" | python3 -c '
 import json, sys
 res = json.load(sys.stdin)["data"]["result"]
 if not res:
     print("(chưa có log khớp)")
 for r in res:
     lbl = ",".join("%s=%s" % kv for kv in sorted(r["metric"].items())) or "tổng"
-    print("%-28s %s" % (lbl, r["value"][1]))' 2>/dev/null || echo "lỗi: $(printf '%s' "$raw" | head -1 | cut -c1-120)"
+    print("%-28s %s" % (lbl, r["value"][1]))' 2>/dev/null
   }
   READY=$(lokiget /ready)
-  echo "      Loki /ready: $(printf '%s' "$READY" | head -1)"
-  if [ "$(printf '%s' "$READY" | tr -d '[:space:]')" = "ready" ]; then
-    ok "Loki sẵn sàng"
-  else
-    bad "Loki chưa sẵn sàng (nếu vừa khởi động, chờ 1 phút rồi chạy lại)"
-  fi
+  echo "      Loki /ready: ${READY:-không phản hồi}"
+  [ "$(echo "$READY" | tr -d '[:space:]')" = "ready" ] && ok "Loki sẵn sàng" || bad "Loki chưa sẵn sàng"
   Q1='sum by (service) (count_over_time({container=~"inventory-.+"}[1h]))'
   Q2='sum by (status_class) (count_over_time({service="nginx", status_class=~".+"}[1h]))'
   Q3='sum by (event) (count_over_time({service="app"} | logfmt | __error__="" | event=~"login_failed|stock_in|stock_out|stock_out_rejected" [24h]))'
-  Q1OUT=""
   for q in "$Q1" "$Q2" "$Q3"; do
     echo "      LogQL> $q"
-    out=$(logql "$q")
-    echo "$out" | sed 's/^/        /' | show
-    [ "$q" = "$Q1" ] && Q1OUT="$out"
+    logql "$q" | sed 's/^/        /' | show
   done
-  SERVICES=$(echo "$Q1OUT" | grep -c 'service=')
+  SERVICES=$(logql "$Q1" | grep -c 'service=')
   [ "$SERVICES" -gt 0 ] && ok "Promtail đã đẩy log của $SERVICES service về Loki" || bad "Loki chưa có log nào"
 else
   note "Chưa chạy phần 3 (Loki/Promtail) - bỏ qua"
