@@ -62,7 +62,7 @@
         <tbody>
         {% for p in items %}
           <tr>
-            <td>{{ item(p, link=True) }}</td>
+            <td>{{ item(p, link=True, size='lg') }}</td>
             <td>{% if p.category %}<span class="badge badge-neutral">{{ p.category }}</span>{% endif %}</td>
             <td><span class="clip" title="{{ p.supplier.name if p.supplier else '' }}">{{ p.supplier.name if p.supplier else '' }}</span></td>
             <td class="num">{{ p.price|money }}</td>

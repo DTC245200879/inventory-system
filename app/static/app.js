@@ -16,6 +16,20 @@
     return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
   };
   var fire = function (el, type) { el.dispatchEvent(new Event(type, { bubbles: true })); };
+  // Ảnh sản phẩm nếu có, nếu không thì chữ cái đầu trên nền màu theo danh mục
+  function paintThumb(el, d, extra) {
+    el.textContent = "";
+    if (d.img) {
+      var img = document.createElement("img");
+      img.src = d.img;
+      img.alt = "";
+      el.className = "thumb has-img" + (extra || "");
+      el.appendChild(img);
+    } else {
+      el.className = "thumb tone-c" + (d.tone || 0) + (extra || "");
+      el.textContent = d.initials || "";
+    }
+  }
 
   /* ---------------------------------------------------------------- menu thao tác */
   function closeMenus(except) {
@@ -200,7 +214,16 @@
         li.id = id + "-" + i;
         li.setAttribute("role", "option");
         main.textContent = o.textContent.trim();
-        li.appendChild(main);
+        if (o.dataset.initials) {
+          var row = document.createElement("span"), th = document.createElement("span");
+          row.className = "combo-item";
+          paintThumb(th, o.dataset);
+          row.appendChild(th);
+          row.appendChild(main);
+          li.appendChild(row);
+        } else {
+          li.appendChild(main);
+        }
         if (o.dataset.meta) {
           var meta = document.createElement("small");
           meta.textContent = o.dataset.meta;
@@ -258,6 +281,74 @@
     sync();
   }
 
+  /* ---------------------------------------------------------------- chọn ảnh sản phẩm */
+  function initImagePicker() {
+    var box = $("[data-img-picker]");
+    if (!box) return;
+    var input = $("[data-img-input]", box), frame = $("[data-img-frame]", box);
+    var current = $("[data-img-current]", box), empty = $("[data-img-empty]", box);
+    var nameEl = $("[data-img-name]", box), errEl = $("[data-img-error]", box);
+    var clearBtn = $("[data-img-clear]", box), remove = $("[data-img-remove]", box);
+    var MAX = 8 * 1024 * 1024, OK = /^image\/(jpeg|png|webp|gif)$/, preview = null;
+
+    function showError(msg) { errEl.textContent = msg; errEl.hidden = !msg; }
+    function reset() {
+      if (preview) { preview.remove(); preview = null; }
+      if (current) current.hidden = false;
+      empty.hidden = !!current;
+      nameEl.hidden = true;
+      clearBtn.hidden = true;
+      frame.classList.toggle("is-removed", !!(remove && remove.checked));
+    }
+    function show(file) {
+      showError("");
+      if (!file) { reset(); return; }
+      if (!OK.test(file.type)) { input.value = ""; reset(); showError("Chỉ nhận ảnh JPG, PNG, WEBP hoặc GIF."); return; }
+      if (file.size > MAX) { input.value = ""; reset(); showError("Ảnh lớn hơn 8 MB, hãy chọn ảnh nhỏ hơn."); return; }
+      if (remove) remove.checked = false;
+      var reader = new FileReader();
+      reader.onload = function () {
+        // data: URL được CSP "img-src 'self' data:" cho phép
+        if (!preview) { preview = document.createElement("img"); preview.alt = "Ảnh sẽ tải lên"; frame.appendChild(preview); }
+        preview.src = reader.result;
+        if (current) current.hidden = true;
+        empty.hidden = true;
+        frame.classList.remove("is-removed");
+      };
+      reader.readAsDataURL(file);
+      var kb = file.size / 1024;
+      nameEl.textContent = file.name + " (" + (kb < 1024 ? Math.max(1, Math.round(kb)) + " KB" : (kb / 1024).toFixed(1).replace(".", ",") + " MB") + ")";
+      nameEl.hidden = false;
+      clearBtn.hidden = false;
+    }
+    input.addEventListener("change", function () { show(input.files[0]); });
+    clearBtn.addEventListener("click", function () { input.value = ""; showError(""); reset(); });
+    if (remove) remove.addEventListener("change", function () {
+      if (remove.checked) { input.value = ""; showError(""); }
+      reset();
+    });
+    ["dragenter", "dragover"].forEach(function (t) {
+      box.addEventListener(t, function (e) { e.preventDefault(); box.classList.add("is-drag"); });
+    });
+    ["dragleave", "drop"].forEach(function (t) {
+      box.addEventListener(t, function (e) {
+        if (t === "dragleave" && box.contains(e.relatedTarget)) return;
+        box.classList.remove("is-drag");
+      });
+    });
+    box.addEventListener("drop", function (e) {
+      e.preventDefault();
+      var f = e.dataTransfer && e.dataTransfer.files[0];
+      if (!f) return;
+      try {
+        var dt = new DataTransfer();
+        dt.items.add(f);
+        input.files = dt.files;
+      } catch (err) { showError("Trình duyệt không hỗ trợ kéo thả, hãy bấm Chọn ảnh."); return; }
+      show(f);
+    });
+  }
+
   /* ---------------------------------------------------------------- xem trước sản phẩm trong phiếu */
   function initStockPreview() {
     var form = $("[data-stock-form]");
@@ -273,8 +364,7 @@
       var thumb = $("[data-pv-thumb]");
       pv.hidden = false;
       empty.hidden = true;
-      thumb.textContent = d.initials;
-      thumb.className = "thumb tone-c" + d.tone;
+      paintThumb(thumb, d, " lg");
       unitLabel.textContent = d.unit;
       set("name", d.name);
       set("sku", d.sku + (d.category ? ", " + d.category : ""));
@@ -351,6 +441,7 @@
   initLive();
   $$("select[data-combobox]").forEach(makeCombo);
   initStockPreview();
+  initImagePicker();
   initChartTabs();
   initPresets();
   initMisc();

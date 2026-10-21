@@ -63,14 +63,17 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Chưa đặt ADMIN_PASSWORD}
       SESSION_COOKIE_SECURE: "true"
       TZ: Asia/Ho_Chi_Minh
+      MEDIA_DIR: /data/media
+    volumes:
+      - app_media:/data/media          # ảnh sản phẩm (đã kiểm tra + mã hoá lại thành WebP)
     depends_on:
       db: { condition: service_healthy }
     networks: [frontend, backend, monitoring]
-    read_only: true                    # hardening: filesystem chỉ đọc
+    read_only: true                    # hardening: filesystem chỉ đọc (trừ volume ảnh ở trên)
     tmpfs: [/tmp]
     cap_drop: [ALL]                    # hardening: bỏ toàn bộ Linux capabilities
     user: "10001:10001"
-    mem_limit: 256m
+    mem_limit: 384m                    # đủ chỗ để xử lý ảnh tải lên (tối đa ~110 MB/ảnh)
     pids_limit: 100
 
   # ------------------------------------------------------------ phpMyAdmin
@@ -128,3 +131,4 @@ networks:
 
 volumes:
   db_data:
+  app_media:

@@ -2,14 +2,19 @@
 
 {% macro icon(name) -%}<svg class="icon"><use href="#{{ name }}"/></svg>{%- endmacro %}
 
-{# Ảnh đại diện sản phẩm: chưa có ảnh thật nên dùng chữ cái đầu + màu theo danh mục #}
+{# Ảnh sản phẩm; chưa có ảnh thì dùng chữ cái đầu + màu theo danh mục #}
 {% macro thumb(p, size='') -%}
+  {%- set src = product_img(p) -%}
+  {%- if src -%}
+  <span class="thumb has-img {{ size }}"><img src="{{ src }}" alt="" loading="lazy" decoding="async"></span>
+  {%- else -%}
   <span class="thumb {{ size }} tone-c{{ p.category|tone }}" aria-hidden="true">{{ p.name|initials }}</span>
+  {%- endif -%}
 {%- endmacro %}
 
-{% macro item(p, link=False) -%}
+{% macro item(p, link=False, size='') -%}
   <div class="item">
-    {{ thumb(p) }}
+    {{ thumb(p, size) }}
     <div>
       {% if link %}<a class="item-name" href="{{ url_for('product_form', pid=p.id) }}">{{ p.name }}</a>
       {% else %}<span class="item-name">{{ p.name }}</span>{% endif %}

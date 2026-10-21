@@ -32,7 +32,7 @@
                 data-sku="{{ p.sku }}" data-name="{{ p.name }}" data-unit="{{ p.unit }}" data-price="{{ (p.price or 0)|int }}"
                 data-qty="{{ p.quantity }}" data-min="{{ p.min_stock }}" data-category="{{ p.category or '' }}"
                 data-supplier="{{ p.supplier.name if p.supplier else '' }}" data-tone="{{ p.category|tone }}"
-                data-initials="{{ p.name|initials }}" data-meta="Tồn {{ p.quantity|num }} {{ p.unit }}">{{ p.sku }} – {{ p.name }}</option>
+                data-initials="{{ p.name|initials }}" data-img="{{ product_img(p) or '' }}" data-meta="Tồn {{ p.quantity|num }} {{ p.unit }}">{{ p.sku }} – {{ p.name }}</option>
             {% endfor %}
           </select>
         </label>

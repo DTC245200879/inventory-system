@@ -227,6 +227,12 @@ git push -u origin main
 
 ---
 
+### 5.5 Ảnh sản phẩm
+
+- Tải ảnh: *Sản phẩm → bấm tên sản phẩm (Sửa) → Ảnh sản phẩm → Chọn ảnh* (hoặc kéo thả) → *Lưu thay đổi*. Nhận JPG/PNG/WEBP/GIF ≤ 8 MB; app thu nhỏ còn 800 px, bỏ EXIF và lưu WebP trong volume `app_media`.
+- Gắn nhanh ảnh minh hoạ mẫu cho các mã có sẵn (LAP-001, LAP-002, MON-001, MOU-001, PRN-001, DSK-001): `docker exec inventory-app python seed_images.py`. Ảnh mẫu do AI tạo, chỉ để demo.
+- Ảnh lưu ngoài DB nên **không cần sửa bảng**; `docker compose down -v` sẽ xoá cả ảnh.
+
 ## 6. BƯỚC 2 – Giám sát Prometheus + Grafana → **Commit 2**
 
 ### 6.1 Thành phần
@@ -360,7 +366,7 @@ sudo ufw status verbose
 | # | Biện pháp | Cấu hình ở đâu | Lệnh kiểm chứng → kết quả đúng |
 |---|---|---|---|
 | 1 | **Non-root container** | `app/Dockerfile` (`USER 10001`), image `nginx-unprivileged`, `user:` trong compose | `docker exec inventory-app id` → `uid=10001`; `docker exec inventory-nginx id` → `uid=101` |
-| 2 | **Read-only filesystem + bỏ capabilities** | `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges` | `docker exec inventory-app touch /app/x` → *Read-only file system*; `docker inspect inventory-app --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}}'` |
+| 2 | **Read-only filesystem + bỏ capabilities** | `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges`; app chỉ ghi được volume ảnh `app_media` (`/data/media`) | `docker exec inventory-app touch /app/x` → *Read-only file system*; `docker inspect inventory-app --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}}'` |
 | 3 | **Network isolation** | 3 network; `backend` là `internal: true`; DB không publish port | `docker network inspect inventory_backend --format '{{.Internal}}'` → `true`; `docker exec inventory-nginx wget -qO- -T2 http://db:3306` → *bad address 'db:3306'* (Nginx không thấy DB); `docker run --rm --network inventory_backend alpine ping -c1 -W2 8.8.8.8` → *Network unreachable* |
 | 4 | **Mật khẩu mạnh, không lộ bí mật** | `scripts/gen-env.sh` (24–32 ký tự ngẫu nhiên), `.env` trong `.gitignore`, mật khẩu admin app được hash | Repo GitHub không có `.env`; `ls -l .env` → `-rw-------` |
 | 5 | **Hạn chế quyền DB** | `db/init/02-users.sh`, `MYSQL_ROOT_HOST=localhost` | phpMyAdmin login `inventory_app` → thử `DROP TABLE products;` → **#1142 DROP command denied**; login `root` → bị từ chối; `docker exec inventory-db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW GRANTS FOR inventory_app"'` → chỉ có `SELECT, INSERT, UPDATE, DELETE` |
@@ -368,7 +374,7 @@ sudo ufw status verbose
 | 7 | **Rate limit chống brute-force** | `limit_req_zone … rate=10r/m` cho `/login` | `for i in $(seq 1 15); do curl -sk -o /dev/null -w "%{http_code} " https://192.168.8.10/login; done` → xuất hiện `429` |
 | 8 | **Giấu endpoint nội bộ** | `/metrics` trả 404 qua Nginx; Prometheus bind `127.0.0.1`; stub_status chỉ ở cổng nội bộ | `curl -sk -o /dev/null -w "%{http_code}\n" https://192.168.8.10/metrics` → `404`; `sudo ss -tlnp` → ra ngoài chỉ có 22, 80, 443; 9090 nằm trên `127.0.0.1` |
 | 9 | **Giới hạn tài nguyên & xoay vòng log** | `mem_limit`, `pids_limit`, log `max-size: 10m` | `docker stats --no-stream` |
-| 10 | **Bảo mật ứng dụng** | CSRF token, cookie `Secure/HttpOnly/SameSite`, chống open-redirect | Trình duyệt → F12 → *Application* → *Cookies* |
+| 10 | **Bảo mật ứng dụng** | CSRF token, cookie `Secure/HttpOnly/SameSite`, chống open-redirect; ảnh tải lên được kiểm tra nội dung, giới hạn 8 MB và mã hoá lại thành WebP (`app/media.py`) | Trình duyệt → F12 → *Application* → *Cookies*; đổi đuôi một file `.txt` thành `.png` rồi tải lên → *Ảnh không hợp lệ* |
 | 11 | **Hardening hệ điều hành** | UFW chỉ mở 22/80/443; máy ảo nằm trong mạng NAT nội bộ VMnet8 (chỉ máy host truy cập được); SSH key cho GitHub; cập nhật bảo mật tự động | `sudo ufw status`; `sudo sshd -T \| grep -i permitrootlogin` → `without-password`; `systemctl is-active unattended-upgrades` → `active` |
 
 > Lưu ý trung thực trong báo cáo: **Promtail** và **cAdvisor** cần đọc Docker (`docker.sock`, thư mục hệ thống) nên không chạy hoàn toàn non-root được. Đây là đánh đổi phổ biến; rủi ro đã được giảm bằng mount chỉ đọc (`:ro`) và đặt trong mạng `monitoring` riêng.

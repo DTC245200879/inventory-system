@@ -18,6 +18,10 @@ RUN pip install -r requirements.txt
 # Code thuộc root, user "app" chỉ đọc được -> không sửa được mã nguồn nếu bị tấn công
 COPY . .
 
+# Thư mục ảnh sản phẩm: chỗ DUY NHẤT app được ghi (gắn volume app_media).
+# Docker chép quyền sở hữu này sang volume khi tạo volume lần đầu.
+RUN mkdir -p /data/media/products && chown -R 10001:10001 /data/media && chmod 750 /data/media
+
 USER 10001:10001
 EXPOSE 5000
 

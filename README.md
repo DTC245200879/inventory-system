@@ -135,6 +135,7 @@ topk(5, sum by (uri) (count_over_time({service="nginx", stream="stdout"} | json 
 - **Hạn chế quyền DB**: app chỉ có `SELECT/INSERT/UPDATE/DELETE`; exporter chỉ đọc thống kê; root chỉ login từ localhost
 - Nginx: HTTPS (TLS 1.2/1.3), HTTP→HTTPS, HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, ẩn version, rate-limit trang login, chặn `/metrics`
 - App: mật khẩu hash, CSRF token, cookie `Secure/HttpOnly/SameSite`, chống open-redirect, khoá dòng khi xuất kho
+- Ảnh sản phẩm tải lên (trang Sửa sản phẩm; gắn ảnh minh hoạ mẫu bằng `docker exec inventory-app python seed_images.py`, ảnh mẫu do AI tạo, không phải ảnh chính hãng): chỉ nhận JPG/PNG/WEBP/GIF thật (kiểm tra nội dung), tối đa 8 MB và giới hạn độ phân giải, được mã hoá lại thành WebP 800 px (bỏ EXIF/GPS), tên file do server đặt; chỉ volume `app_media` ghi được, mã nguồn vẫn read-only
 
 **Mức hệ điều hành (Ubuntu Server)**
 - Tường lửa UFW chỉ mở 22/80/443; máy ảo nằm trong mạng NAT nội bộ của VMware
@@ -148,7 +149,7 @@ Chi tiết từng bước: xem [docs/HUONG_DAN.md](docs/HUONG_DAN.md).
 
 ```bash
 docker compose down      # dừng (dữ liệu vẫn giữ trong volume)
-docker compose down -v   # dừng + xoá toàn bộ dữ liệu (DB, Prometheus, Grafana, Loki)
+docker compose down -v   # dừng + xoá toàn bộ dữ liệu (DB, ảnh sản phẩm, Prometheus, Grafana, Loki)
 ```
 
 (Các lệnh trên áp dụng cho cả 3 file khi đã đặt `COMPOSE_FILE` trong `.env`.)

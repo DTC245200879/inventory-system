@@ -11,8 +11,33 @@
   {% if p.id %}<div class="head-actions">{{ status_badge(p) }}</div>{% endif %}
 </div>
 <div class="form-layout narrow">
-<form method="post" class="card">
+<form method="post" class="card" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {%- set img = product_img(p) %}
+  <div class="form-section">
+    <h2>Ảnh sản phẩm</h2>
+    <p>Ảnh hiện ở danh sách sản phẩm, phiếu nhập/xuất và trang tổng quan để nhận ra mặt hàng nhanh hơn.</p>
+    <div class="img-picker" data-img-picker>
+      <div class="img-frame" data-img-frame>
+        {%- if img %}<img src="{{ img }}" alt="Ảnh hiện tại của {{ p.name }}" data-img-current>{% endif %}
+        <span class="img-empty"{% if img %} hidden{% endif %} data-img-empty>{{ icon('i-image') }}</span>
+      </div>
+      <div class="img-body">
+        <p><strong>Kéo thả ảnh vào khung này</strong> hoặc chọn từ máy.</p>
+        <div class="img-actions">
+          <label class="btn btn-soft">{{ icon('i-upload') }}{{ 'Đổi ảnh' if img else 'Chọn ảnh' }}
+            <input class="sr-only" type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif" data-img-input></label>
+          <button class="btn btn-ghost" type="button" data-img-clear hidden>Bỏ chọn</button>
+        </div>
+        <span class="img-file" data-img-name hidden></span>
+        <p class="alert alert-error img-error" data-img-error hidden></p>
+        <span class="hint">JPG, PNG, WEBP hoặc GIF, tối đa 8 MB. Nên dùng ảnh vuông, nền trắng. Ảnh được thu nhỏ còn 800 px và bỏ thông tin EXIF.</span>
+        {%- if img %}
+        <label class="check"><input type="checkbox" name="remove_image" value="1" data-img-remove>Xoá ảnh hiện tại</label>
+        {%- endif %}
+      </div>
+    </div>
+  </div>
   <div class="form-section">
     <h2>Thông tin hàng hoá</h2>
     <p>Mã SKU là mã duy nhất in trên nhãn hàng, dùng để tìm kiếm nhanh.</p>

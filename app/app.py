@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (Flask, Response, abort, flash, redirect, render_template,
-                   request, session, url_for)
+                   request, send_file, session, url_for)
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 from prometheus_client import Counter, Gauge
@@ -23,6 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import charts
+import media
 import reports
 
 db = SQLAlchemy()
@@ -208,6 +209,7 @@ def create_app(test_config=None):
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=secure_cookie,
         PERMANENT_SESSION_LIFETIME=3600,
+        MAX_CONTENT_LENGTH=media.MAX_BYTES + 1024 * 1024,  # ảnh tối đa 8 MB + phần form
         ADMIN_USERNAME=os.getenv("ADMIN_USERNAME", "admin"),
         # Không đặt ADMIN_PASSWORD -> không ai đăng nhập được (fail-safe)
         ADMIN_PASSWORD_HASH=(generate_password_hash(os.environ["ADMIN_PASSWORD"])
@@ -403,6 +405,15 @@ def create_app(test_config=None):
             if not sku or not name:
                 flash("Mã SKU và tên sản phẩm là bắt buộc", "error")
                 return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.all())
+            # Kiểm tra ảnh trước khi lưu DB: ảnh hỏng thì không lưu gì cả
+            upload, image_bytes = request.files.get("image"), None
+            if upload and upload.filename:
+                try:
+                    image_bytes = media.process_upload(upload)
+                except media.ImageError as e:
+                    log_event(logging.WARNING, "product_image_rejected", reason=str(e))
+                    flash(f"Ảnh không hợp lệ: {e}", "error")
+                    return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.all())
             product.sku = sku.upper()
             product.name = name
             product.category = clean(request.form.get("category"), 80)
@@ -423,6 +434,12 @@ def create_app(test_config=None):
                 return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.all())
             log_event(logging.INFO, "product_updated" if pid else "product_created",
                       sku=product.sku, product_id=product.id)
+            if image_bytes:
+                media.save_product_image(product.id, image_bytes)
+                log_event(logging.INFO, "product_image_updated", sku=product.sku,
+                          product_id=product.id, size_kb=len(image_bytes) // 1024)
+            elif request.form.get("remove_image") and media.delete_product_image(product.id):
+                log_event(logging.INFO, "product_image_removed", sku=product.sku, product_id=product.id)
             flash("Đã lưu sản phẩm", "success")
             return redirect(url_for("products"))
         return render_template("product_form.html", categories=product_categories(), p=product, suppliers=Supplier.query.order_by(Supplier.name).all())
@@ -437,9 +454,23 @@ def create_app(test_config=None):
         sku = product.sku
         db.session.delete(product)
         db.session.commit()
+        media.delete_product_image(pid)
         log_event(logging.INFO, "product_deleted", sku=sku, product_id=pid)
         flash("Đã xoá sản phẩm", "success")
         return redirect(url_for("products"))
+
+    @app.route("/products/<int:pid>/image")
+    @login_required
+    def product_image(pid):
+        path = media.product_path(pid)
+        if not os.path.isfile(path):
+            abort(404)
+        # URL có ?v=<thời điểm sửa> nên cache lâu được; đổi ảnh -> URL mới
+        resp = send_file(path, mimetype="image/webp", conditional=True,
+                         max_age=31536000 if request.args.get("v") else 0)
+        resp.cache_control.public = False
+        resp.cache_control.private = True
+        return resp
 
     # ------------------------------------------------ suppliers
     @app.route("/suppliers")
@@ -650,6 +681,13 @@ def create_app(test_config=None):
     def not_found(_):
         return render_template("error.html", code=404, message="Không tìm thấy trang"), 404
 
+    @app.errorhandler(413)
+    def too_large(_):
+        log_event(logging.WARNING, "upload_too_large")
+        return render_template("error.html", code=413,
+                               message="File tải lên quá lớn",
+                               hint="Ảnh sản phẩm tối đa 8 MB. Quay lại trang trước và chọn ảnh nhỏ hơn."), 413
+
     @app.errorhandler(500)
     def server_error(e):
         log_event(logging.ERROR, "server_error", error=type(e).__name__)
@@ -683,6 +721,12 @@ def create_app(test_config=None):
     @app.template_filter("pct")
     def pct(v):
         return f"{abs(v):,.1f}".replace(".", ",") + "%"
+
+    @app.template_global("product_img")
+    def product_img(p):
+        """URL ảnh sản phẩm (kèm ?v= để làm mới cache) hoặc None nếu chưa có ảnh."""
+        v = media.image_version(p.id) if p is not None and p.id else None
+        return url_for("product_image", pid=p.id, v=v) if v else None
 
     @app.template_global()
     def url_with(**changes):
