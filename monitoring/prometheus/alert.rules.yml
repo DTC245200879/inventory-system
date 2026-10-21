@@ -1,0 +1,36 @@
+groups:
+  - name: inventory-alerts
+    rules:
+      - alert: TargetDown
+        expr: up{job!~"loki|promtail"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Target {{ $labels.job }} ({{ $labels.instance }}) không phản hồi"
+
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 30s
+        labels: { severity: critical }
+        annotations:
+          summary: "MySQL không kết nối được"
+
+      - alert: ContainerHighMemory
+        expr: (container_memory_usage_bytes{name=~"inventory-.*"} / container_spec_memory_limit_bytes{name=~"inventory-.*"}) > 0.9 and container_spec_memory_limit_bytes{name=~"inventory-.*"} > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Container {{ $labels.name }} dùng > 90% RAM giới hạn"
+
+      - alert: HighHttp5xxRate
+        expr: sum(rate(flask_http_request_total{status=~"5.."}[5m])) > 0.1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Web app trả lỗi 5xx nhiều"
+
+      - alert: TooManyFailedLogins
+        expr: increase(inventory_login_attempts_total{result="failed"}[5m]) > 10
+        labels: { severity: warning }
+        annotations:
+          summary: "Có thể đang bị brute-force đăng nhập"

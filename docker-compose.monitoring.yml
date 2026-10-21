@@ -1,0 +1,129 @@
+# =====================================================================
+#  PHẦN 2: Giám sát - Prometheus + Grafana + exporters   (Commit 2)
+#  Chạy:  docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# =====================================================================
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v2.53.0
+    container_name: inventory-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"          # chỉ mở cho localhost (xem Targets khi demo)
+    networks: [monitoring]
+    read_only: true
+    cap_drop: [ALL]
+    user: "65534:65534"                # nobody
+    mem_limit: 512m
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:11.1.0
+    container_name: inventory-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Chưa đặt GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: ${PUBLIC_URL:-https://localhost}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+    networks: [frontend, monitoring]   # truy cập qua Nginx: https://localhost/grafana/
+    cap_drop: [ALL]
+    user: "472:0"
+    mem_limit: 256m
+
+  # Metrics của từng container (CPU, RAM, network, I/O)
+  cadvisor:
+    <<: *hardening
+    # v0.54+ mới đọc được container khi Docker dùng containerd image store
+    # (mặc định của Docker Engine 29 trên Ubuntu); bản mới phát hành trên ghcr.io
+    image: ghcr.io/google/cadvisor:v0.60.5
+    container_name: inventory-cadvisor
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [monitoring]
+    mem_limit: 256m
+
+  # Metrics của máy host (CPU, RAM, disk)
+  node-exporter:
+    <<: *hardening
+    image: prom/node-exporter:v1.8.1
+    container_name: inventory-node-exporter
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    networks: [monitoring]
+    read_only: true
+    cap_drop: [ALL]
+    user: "65534:65534"
+    mem_limit: 64m
+
+  # Metrics MySQL - đăng nhập bằng user "exporter" chỉ có quyền đọc thống kê
+  mysqld-exporter:
+    <<: *hardening
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: inventory-mysqld-exporter
+    command:
+      - --mysqld.address=db:3306
+      - --mysqld.username=exporter
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: ${EXPORTER_DB_PASSWORD}
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend, monitoring]
+    read_only: true
+    cap_drop: [ALL]
+    user: "65534:65534"
+    mem_limit: 64m
+
+  # Metrics Nginx (đọc từ stub_status nội bộ :8081)
+  nginx-exporter:
+    <<: *hardening
+    image: nginx/nginx-prometheus-exporter:1.1.0
+    container_name: inventory-nginx-exporter
+    command:
+      - --nginx.scrape-uri=http://nginx:8081/stub_status
+    depends_on: [nginx]
+    networks: [monitoring]
+    read_only: true
+    cap_drop: [ALL]
+    user: "65534:65534"
+    mem_limit: 64m
+
+volumes:
+  prometheus_data:
+  grafana_data:

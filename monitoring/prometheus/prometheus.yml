@@ -1,0 +1,47 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: inventory
+
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Web app Flask (prometheus_flask_exporter) - request, latency, nghiệp vụ kho
+  - job_name: inventory-app
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["app:5000"]
+
+  # Container
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Host
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Database
+  - job_name: mysql
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]
+
+  # Web server
+  - job_name: nginx
+    static_configs:
+      - targets: ["nginx-exporter:9113"]
+
+  # Hệ thống log (có sau commit 3; trước đó target sẽ DOWN - bình thường)
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+  - job_name: promtail
+    static_configs:
+      - targets: ["promtail:9080"]
